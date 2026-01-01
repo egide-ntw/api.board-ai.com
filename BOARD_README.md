@@ -2,7 +2,7 @@
 
 A NestJS backend implementing an autonomous multi-agent system where AI personas debate and provide diverse perspectives on user queries.
 
-## 🏗️ Architecture Overview
+## Architecture Overview
 
 ### Core Modules
 
@@ -34,11 +34,11 @@ A NestJS backend implementing an autonomous multi-agent system where AI personas
 #### 3. **Personas Module**
 - **Entity**: `Persona` - AI agent configurations
 - **Default Personas**:
-  - 🎤 **Marketing Expert** - Brand strategy, customer acquisition
-  - 💻 **Senior Developer** - Technical architecture, code quality
-  - 🎨 **UX/UI Designer** - User experience, visual design
-  - ⚖️ **Legal Advisor** - Compliance, risk assessment
-  - 💰 **Financial Analyst** - Budget analysis, ROI calculation
+  - **Marketing Expert** - Brand strategy, customer acquisition
+  - **Senior Developer** - Technical architecture, code quality
+  - **UX/UI Designer** - User experience, visual design
+  - **Legal Advisor** - Compliance, risk assessment
+  - **Financial Analyst** - Budget analysis, ROI calculation
 - **Endpoints**:
   - `GET /api/v1/personas` - List all active personas
   - `GET /api/v1/personas/:id` - Get persona details
@@ -92,7 +92,7 @@ A NestJS backend implementing an autonomous multi-agent system where AI personas
   - `round_completed` - Round completion notification
   - `status_change` - Conversation status update
 
-## 📊 Database Schema
+## Database Schema
 
 ### Tables
 - `conversations` - Boardroom sessions
@@ -104,7 +104,7 @@ A NestJS backend implementing an autonomous multi-agent system where AI personas
 - `roles` - User roles (existing)
 - `statuses` - User statuses (existing)
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 ```bash
@@ -150,7 +150,7 @@ npm run build
 npm run start:prod
 ```
 
-## 📡 API Usage Example
+## API Usage Example
 
 ### 1. Create a Conversation
 ```bash
@@ -195,7 +195,7 @@ socket.on('agent_response', (data) => {
 });
 ```
 
-## 🧪 Testing
+## Testing
 
 ```bash
 # Unit tests
@@ -208,21 +208,21 @@ npm run test:e2e
 npm run test:cov
 ```
 
-## 📝 Key Features
+## Key Features
 
-✅ Multi-agent debate system with 5 specialized personas
-✅ Real-time WebSocket communication
-✅ GPT-4o structured output enforcement
-✅ Token usage tracking and cost estimation
-✅ File attachment support
-✅ Round-based debate management
-✅ Conversation analytics
-✅ Redis caching for performance
-✅ TypeORM with PostgreSQL
-✅ Swagger API documentation
-✅ JWT authentication
+- Multi-agent debate system with 5 specialized personas
+- Real-time WebSocket communication
+- GPT-4o structured output enforcement
+- Token usage tracking and cost estimation
+- File attachment support
+- Round-based debate management
+- Conversation analytics
+- Redis caching for performance
+- TypeORM with PostgreSQL
+- Swagger API documentation
+- JWT authentication
 
-## 🔧 Tech Stack
+## Tech Stack
 
 - **Framework**: NestJS 9.4
 - **Database**: PostgreSQL + TypeORM

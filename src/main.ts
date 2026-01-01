@@ -35,12 +35,12 @@ async function bootstrap() {
       `Board AI API enables autonomous multi-agent debates where specialized AI personas collaborate to provide diverse perspectives.
       
 **Key Features:**
-- 🤖 5 Specialized AI Personas (Marketing, Developer, Designer, Legal, Finance)
-- 💬 Real-time WebSocket Communication
-- 📊 Session Analytics & Token Tracking
-- 📎 File Upload Support
-- 🔄 Round-based Debate System
-- 🔐 JWT Authentication
+- 5 Specialized AI Personas (Marketing, Developer, Designer, Legal, Finance)
+- Real-time WebSocket Communication
+- Session Analytics & Token Tracking
+- File Upload Support
+- Round-based Debate System
+- JWT Authentication
 
 **Getting Started:**
 1. Register/Login to get JWT token
