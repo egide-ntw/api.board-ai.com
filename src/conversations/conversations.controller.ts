@@ -65,10 +65,13 @@ export class ConversationsController {
     @Query('page') page: number = 1,
     @Query('limit') limit: number = 20,
   ) {
+    const pageNumber = Number(page) || 1;
+    const limitNumber = Number(limit) || 20;
+
     const { data, total } = await this.conversationsService.findAll(
       {
-        page,
-        limit,
+        page: pageNumber,
+        limit: limitNumber,
       },
     );
 
@@ -76,10 +79,10 @@ export class ConversationsController {
       success: true,
       data,
       pagination: {
-        page,
-        limit,
+        page: pageNumber,
+        limit: limitNumber,
         total,
-        totalPages: Math.ceil(total / limit),
+        totalPages: Math.ceil(total / limitNumber),
       },
     };
   }

@@ -77,7 +77,7 @@ export class AiService {
                   description: 'Optional actionable suggestions',
                 },
               },
-              required: ['content', 'reasoning', 'confidence'],
+              required: ['content', 'reasoning', 'confidence', 'suggestions'],
               additionalProperties: false,
             },
           },

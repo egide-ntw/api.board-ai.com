@@ -66,8 +66,7 @@ export class BoardGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   // Emit agent typing indicator
-  emitAgentTyping(conversationId: string, agentType: string) {
-    this.server.to(`conversation:${conversationId}`).emit('agent_typing', {
+  emitAgentTyping(conversationId: string, agentType: string) {    if (!this.server) return;    this.server.to(`conversation:${conversationId}`).emit('agent_typing', {
       agentType,
       timestamp: new Date(),
     });
@@ -75,6 +74,7 @@ export class BoardGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   // Emit agent response
   emitAgentResponse(conversationId: string, message: any) {
+    if (!this.server) return;
     this.server.to(`conversation:${conversationId}`).emit('agent_response', {
       message,
       timestamp: new Date(),
@@ -83,6 +83,7 @@ export class BoardGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   // Emit round completed
   emitRoundCompleted(conversationId: string, roundNumber: number) {
+    if (!this.server) return;
     this.server.to(`conversation:${conversationId}`).emit('round_completed', {
       roundNumber,
       timestamp: new Date(),
@@ -91,6 +92,7 @@ export class BoardGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   // Emit conversation status change
   emitStatusChange(conversationId: string, status: string) {
+    if (!this.server) return;
     this.server.to(`conversation:${conversationId}`).emit('status_change', {
       status,
       timestamp: new Date(),

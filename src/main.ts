@@ -77,7 +77,7 @@ async function bootstrap() {
     .addTag('Attachments', 'File upload and management')
     .addTag('Analytics', 'Session metrics and token usage')
     .addTag('Orchestration', 'Multi-agent debate coordination')
-    .addServer('http://localhost:3000', 'Local Development')
+    .addServer('http://localhost:8080', 'Local Development')
     .addServer('https://api.board-ai.com', 'Production')
     .build();
 
