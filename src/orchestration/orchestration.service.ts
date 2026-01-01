@@ -24,10 +24,10 @@ export class OrchestrationService {
   async processUserMessage(
     conversationId: string,
     userMessage: string,
-    userId: number,
+    userId?: number,
   ): Promise<Message[]> {
     const conversation =
-      await this.conversationsService.findOne(conversationId, userId);
+      await this.conversationsService.findOne(conversationId);
 
     // Get active personas
     const personas = await this.personasService.findByIds(

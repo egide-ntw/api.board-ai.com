@@ -4,8 +4,6 @@ import { AuthGuard } from '@nestjs/passport';
 import { PersonasService } from './personas.service';
 
 @ApiTags('Personas')
-@ApiBearerAuth('JWT-auth')
-@UseGuards(AuthGuard('jwt'))
 @Controller({
   path: 'personas',
   version: '1',

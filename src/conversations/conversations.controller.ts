@@ -19,8 +19,6 @@ import { CreateConversationDto } from './dto/create-conversation.dto';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
 
 @ApiTags('Conversations')
-@ApiBearerAuth('JWT-auth')
-@UseGuards(AuthGuard('jwt'))
 @Controller({
   path: 'conversations',
   version: '1',
@@ -49,7 +47,7 @@ export class ConversationsController {
     }
   })
   create(@Body() createDto: CreateConversationDto, @Request() req) {
-    return this.conversationsService.create(createDto, req.user);
+    return this.conversationsService.create(createDto, req?.user);
   }
 
   @Get()
@@ -64,12 +62,10 @@ export class ConversationsController {
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   async findAll(
-    @Request() req,
     @Query('page') page: number = 1,
     @Query('limit') limit: number = 20,
   ) {
-    const { data, total } = await this.conversationsService.findAllByUser(
-      req.user.id,
+    const { data, total } = await this.conversationsService.findAll(
       {
         page,
         limit,
@@ -89,22 +85,21 @@ export class ConversationsController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string, @Request() req) {
-    return this.conversationsService.findOne(id, req.user.id);
+  findOne(@Param('id') id: string) {
+    return this.conversationsService.findOne(id);
   }
 
   @Patch(':id')
   update(
     @Param('id') id: string,
     @Body() updateDto: UpdateConversationDto,
-    @Request() req,
   ) {
-    return this.conversationsService.update(id, req.user.id, updateDto);
+    return this.conversationsService.update(id, updateDto);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  remove(@Param('id') id: string, @Request() req) {
-    return this.conversationsService.remove(id, req.user.id);
+  async remove(@Param('id') id: string) {
+    return this.conversationsService.remove(id);
   }
 }

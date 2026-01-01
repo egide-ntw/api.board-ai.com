@@ -16,11 +16,11 @@ export class ConversationsService {
 
   async create(
     createDto: CreateConversationDto,
-    user: User,
+    user?: User,
   ): Promise<Conversation> {
     const conversation = this.conversationsRepository.create({
       ...createDto,
-      user,
+      user: user || null,
       title: createDto.title || 'New Conversation',
       activePersonas: createDto.activePersonas || [
         'marketing',
@@ -34,12 +34,10 @@ export class ConversationsService {
     return this.conversationsRepository.save(conversation);
   }
 
-  async findAllByUser(
-    userId: number,
+  async findAll(
     paginationOptions: IPaginationOptions,
   ): Promise<{ data: Conversation[]; total: number }> {
     const [data, total] = await this.conversationsRepository.findAndCount({
-      where: { user: { id: userId } },
       order: { updatedAt: 'DESC' },
       take: paginationOptions.limit,
       skip: (paginationOptions.page - 1) * paginationOptions.limit,
@@ -49,9 +47,9 @@ export class ConversationsService {
     return { data, total };
   }
 
-  async findOne(id: string, userId: number): Promise<Conversation> {
+  async findOne(id: string): Promise<Conversation> {
     const conversation = await this.conversationsRepository.findOne({
-      where: { id, user: { id: userId } },
+      where: { id },
       relations: ['messages', 'messages.attachments'],
     });
 
@@ -64,18 +62,17 @@ export class ConversationsService {
 
   async update(
     id: string,
-    userId: number,
-    updateDto: UpdateConversationDto,
+    updateConversationDto: UpdateConversationDto,
   ): Promise<Conversation> {
-    const conversation = await this.findOne(id, userId);
+    const conversation = await this.findOne(id);
 
-    Object.assign(conversation, updateDto);
+    Object.assign(conversation, updateConversationDto);
 
     return this.conversationsRepository.save(conversation);
   }
 
-  async remove(id: string, userId: number): Promise<void> {
-    const conversation = await this.findOne(id, userId);
+  async remove(id: string): Promise<void> {
+    const conversation = await this.findOne(id);
     await this.conversationsRepository.remove(conversation);
   }
 

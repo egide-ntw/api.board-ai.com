@@ -5,8 +5,6 @@ import { AnalyticsService } from './analytics.service';
 import { ConversationsService } from '../conversations/conversations.service';
 
 @ApiTags('Analytics')
-@ApiBearerAuth('JWT-auth')
-@UseGuards(AuthGuard('jwt'))
 @Controller({
   path: 'analytics',
   version: '1',
@@ -20,10 +18,9 @@ export class AnalyticsController {
   @Get('conversations/:id')
   async getConversationAnalytics(
     @Param('id') conversationId: string,
-    @Request() req,
   ) {
-    // Verify user owns the conversation
-    await this.conversationsService.findOne(conversationId, req.user.id);
+    // Verify conversation exists
+    await this.conversationsService.findOne(conversationId);
 
     const analytics =
       await this.analyticsService.findByConversation(conversationId);

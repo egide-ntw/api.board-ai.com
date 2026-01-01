@@ -15,8 +15,6 @@ import { AuthGuard } from '@nestjs/passport';
 import { AttachmentsService } from './attachments.service';
 
 @ApiTags('Attachments')
-@ApiBearerAuth('JWT-auth')
-@UseGuards(AuthGuard('jwt'))
 @Controller({
   path: 'attachments',
   version: '1',

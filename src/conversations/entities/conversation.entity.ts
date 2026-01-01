@@ -23,9 +23,9 @@ export class Conversation extends EntityHelper {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => User, { eager: true })
+  @ManyToOne(() => User, { eager: true, nullable: true })
   @JoinColumn({ name: 'user_id' })
-  user: User;
+  user: User | null;
 
   @Column({ type: 'varchar', length: 255, nullable: true })
   title: string;

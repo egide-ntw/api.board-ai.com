@@ -4,8 +4,6 @@ import { AuthGuard } from '@nestjs/passport';
 import { OrchestrationService } from './orchestration.service';
 
 @ApiTags('Orchestration')
-@ApiBearerAuth('JWT-auth')
-@UseGuards(AuthGuard('jwt'))
 @Controller({
   path: 'orchestration',
   version: '1',
@@ -44,12 +42,12 @@ export class OrchestrationController {
     }
   })
   async processMessage(
-    @Request() req,
     @Param('id') conversationId: string,
     @Body('message') message: string,
+    @Request() req?,
   ) {
     const responses =
-      await this.orchestrationService.processUserMessage(conversationId, message, req.user.id);
+      await this.orchestrationService.processUserMessage(conversationId, message, req?.user?.id);
 
     return {
       success: true,

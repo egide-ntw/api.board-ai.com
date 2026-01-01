@@ -16,8 +16,6 @@ import { CreateMessageDto } from './dto/create-message.dto';
 import { ConversationsService } from '../conversations/conversations.service';
 
 @ApiTags('Messages')
-@ApiBearerAuth('JWT-auth')
-@UseGuards(AuthGuard('jwt'))
 @Controller({
   path: 'conversations/:conversationId/messages',
   version: '1',
@@ -33,11 +31,9 @@ export class MessagesController {
   async create(
     @Param('conversationId') conversationId: string,
     @Body() createDto: CreateMessageDto,
-    @Request() req,
   ) {
     const conversation = await this.conversationsService.findOne(
       conversationId,
-      req.user.id,
     );
 
     const message = await this.messagesService.create(
@@ -55,10 +51,9 @@ export class MessagesController {
   @Get()
   async findAll(
     @Param('conversationId') conversationId: string,
-    @Request() req,
   ) {
-    // Verify user has access to conversation
-    await this.conversationsService.findOne(conversationId, req.user.id);
+    // Verify conversation exists
+    await this.conversationsService.findOne(conversationId);
 
     const messages =
       await this.messagesService.findAllByConversation(conversationId);
