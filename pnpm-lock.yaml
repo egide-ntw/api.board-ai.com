@@ -137,6 +137,9 @@ importers:
       nodemailer:
         specifier: 6.9.1
         version: 6.9.1
+      openai:
+        specifier: ^6.15.0
+        version: 6.15.0(ws@8.18.3)(zod@4.3.4)
       passport:
         specifier: 0.6.0
         version: 0.6.0

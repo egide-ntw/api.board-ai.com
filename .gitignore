@@ -78,3 +78,5 @@ dump.rdb
 
 # Misc
 .vercel
+
+/generated/prisma

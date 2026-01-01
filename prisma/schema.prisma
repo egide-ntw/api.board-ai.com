@@ -1,0 +1,114 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String         @id @default(uuid())
+  email         String         @unique
+  name          String?
+  avatarUrl     String?        @map("avatar_url")
+  passwordHash  String?        @map("password_hash")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  
+  conversations Conversation[]
+  
+  @@map("users")
+}
+
+model Conversation {
+  id                String             @id @default(uuid())
+  userId            String             @map("user_id")
+  title             String             @default("New brainstorming")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  status            String             @default("active")
+  consensusReached  Boolean            @default(false) @map("consensus_reached")
+  viabilityScore    Decimal?           @map("viability_score") @db.Decimal(5, 2)
+  totalTurns        Int                @default(0) @map("total_turns")
+  activeAgents      String[]           @map("active_agents")
+  
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages          Message[]
+  analytics         SessionAnalytics[]
+  
+  @@index([userId, updatedAt(sort: Desc)])
+  @@map("conversations")
+}
+
+model Message {
+  id               String       @id @default(uuid())
+  conversationId   String       @map("conversation_id")
+  personaId        String       @map("persona_id")
+  content          String       @db.Text
+  createdAt        DateTime     @default(now()) @map("created_at")
+  isTyping         Boolean      @default(false) @map("is_typing")
+  isRebuttal       Boolean      @default(false) @map("is_rebuttal")
+  isResolution     Boolean      @default(false) @map("is_resolution")
+  sentimentScore   Decimal?     @map("sentiment_score") @db.Decimal(3, 2)
+  modelUsed        String?      @map("model_used")
+  tokensUsed       Int?         @map("tokens_used")
+  latencyMs        Int?         @map("latency_ms")
+  
+  conversation     Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  attachments      Attachment[]
+  
+  @@index([conversationId, createdAt(sort: Asc)])
+  @@map("messages")
+}
+
+model Attachment {
+  id               String   @id @default(uuid())
+  messageId        String   @map("message_id")
+  fileName         String   @map("file_name")
+  fileType         String   @map("file_type")
+  fileSize         Int      @map("file_size")
+  storageUrl       String   @map("storage_url") @db.Text
+  vectorIndexed    Boolean  @default(false) @map("vector_indexed")
+  pineconeNamespace String? @map("pinecone_namespace")
+  createdAt        DateTime @default(now()) @map("created_at")
+  
+  message          Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  
+  @@index([messageId])
+  @@map("attachments")
+}
+
+model Persona {
+  id            String   @id
+  name          String
+  role          String
+  avatarText    String   @map("avatar_text")
+  colorHex      String   @map("color_hex")
+  systemPrompt  String   @map("system_prompt") @db.Text
+  enabled       Boolean  @default(true)
+  priorityOrder Int      @default(0) @map("priority_order")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  
+  @@map("personas")
+}
+
+model SessionAnalytics {
+  id                   String       @id @default(uuid())
+  conversationId       String       @map("conversation_id")
+  agreementScore       Decimal?     @map("agreement_score") @db.Decimal(5, 2)
+  conflictCount        Int          @default(0) @map("conflict_count")
+  resolutionCount      Int          @default(0) @map("resolution_count")
+  totalTokensUsed      Int          @default(0) @map("total_tokens_used")
+  totalCostUsd         Decimal      @default(0) @map("total_cost_usd") @db.Decimal(10, 4)
+  avgResponseTimeMs    Int?         @map("avg_response_time_ms")
+  finalRecommendation  String?      @map("final_recommendation") @db.Text
+  keyInsights          Json?        @map("key_insights")
+  createdAt            DateTime     @default(now()) @map("created_at")
+  updatedAt            DateTime     @updatedAt @map("updated_at")
+  
+  conversation         Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  @@map("session_analytics")
+}
