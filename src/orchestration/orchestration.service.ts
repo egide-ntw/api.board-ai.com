@@ -7,6 +7,7 @@ import { AnalyticsService } from '../analytics/analytics.service';
 import { BoardGateway } from '../board/board.gateway';
 import { Conversation, ConversationStatus } from '../conversations/entities/conversation.entity';
 import { Message } from '../messages/entities/message.entity';
+import { Persona } from '../personas/entities/persona.entity';
 
 @Injectable()
 export class OrchestrationService {
@@ -39,27 +40,40 @@ export class OrchestrationService {
       await this.messagesService.findAllByConversation(conversationId);
 
     const agentResponses: Message[] = [];
+    const conversationHistory = history.map((msg) => ({
+      role: msg.role,
+      content: msg.content,
+    }));
 
-    // Process each agent response sequentially
-    for (const persona of personas) {
+    // If user tags personas (e.g., @pm @developer), restrict responders to those personas only
+    const taggedPersonas = this.extractTaggedPersonas(personas, userMessage);
+    const taggingMode = taggedPersonas.length > 0;
+
+    // Primary responder chosen via routing prompt (fallback to keyword heuristic)
+    const routedPersona = taggingMode ? null : await this.choosePersonaByPrompt(personas, userMessage);
+    const heuristicPersona = taggingMode ? null : this.selectPersonaForMessage(personas, userMessage);
+    const pmFallback = personas.find((p) => {
+      const idName = `${p.id} ${p.name}`.toLowerCase();
+      return idName.includes('pm') || idName.includes('product');
+    });
+    const primaryPool = taggingMode ? taggedPersonas : personas;
+    const primary = routedPersona || heuristicPersona || pmFallback || primaryPool[0];
+
+    let turnIndex = conversation.turnIndex || 0;
+
+    // Decide responder set: if tagging, only tagged personas respond (no reactions from others). Otherwise, primary + reactions from the rest.
+    const responderList = taggingMode ? primaryPool : [primary];
+
+    for (const persona of responderList) {
       try {
-        // Emit typing indicator
         this.boardGateway.emitAgentTyping(conversationId, persona.id);
 
-        // Build conversation history for this agent
-        const conversationHistory = history.map((msg) => ({
-          role: msg.role,
-          content: msg.content,
-        }));
-
-        // Generate response
         const { response, usage } = await this.aiService.generateAgentResponse(
           persona.systemPrompt,
           userMessage,
           conversationHistory,
         );
 
-        // Create agent message
         const agentMessage = await this.messagesService.createAgentMessage(
           conversation,
           persona.id,
@@ -73,7 +87,6 @@ export class OrchestrationService {
 
         agentResponses.push(agentMessage);
 
-        // Update analytics
         await this.analyticsService.updateTokens(
           conversationId,
           usage?.prompt_tokens || 0,
@@ -85,16 +98,64 @@ export class OrchestrationService {
           persona.id,
         );
 
-        // Emit agent response via WebSocket
         this.boardGateway.emitAgentResponse(conversationId, agentMessage);
 
-        // Small delay between agents for better UX
-        await this.delay(1000);
+        turnIndex += 1;
+        await this.conversationsService.update(conversationId, {
+          currentSpeaker: persona.id,
+          turnIndex,
+        } as any);
+
+        // If not tagging and there are others, collect brief reactions
+        if (!taggingMode) {
+          const otherPersonas = personas.filter((p) => p.id !== persona.id);
+          const reactionHistory = [...conversationHistory, { role: 'agent', content: agentMessage.content }];
+
+          for (const other of otherPersonas) {
+            try {
+              this.boardGateway.emitAgentTyping(conversationId, other.id);
+
+              const reactionPrompt = `You are ${other.name}. Another persona answered the user. Briefly react: do you agree, disagree, or suggest a change? Keep it concise (<=120 words).`;
+
+              const { response: reaction, usage: reactionUsage } =
+                await this.aiService.generateAgentResponse(
+                  other.systemPrompt,
+                  `${reactionPrompt}\n\nUser message: ${userMessage}\nPrimary response: ${agentMessage.content}`,
+                  reactionHistory,
+                );
+
+              const reactionMessage = await this.messagesService.createAgentMessage(
+                conversation,
+                other.id,
+                reaction.content,
+                {
+                  reasoning: reaction.reasoning,
+                  confidence: reaction.confidence,
+                  suggestions: reaction.suggestions,
+                },
+              );
+
+              agentResponses.push(reactionMessage);
+
+              await this.analyticsService.updateTokens(
+                conversationId,
+                reactionUsage?.prompt_tokens || 0,
+                reactionUsage?.completion_tokens || 0,
+              );
+
+              await this.analyticsService.incrementAgentParticipation(
+                conversationId,
+                other.id,
+              );
+
+              this.boardGateway.emitAgentResponse(conversationId, reactionMessage);
+            } catch (reactionError) {
+              this.logger.error(`Error processing reaction from ${other.name}:`, reactionError);
+            }
+          }
+        }
       } catch (error) {
-        this.logger.error(
-          `Error processing ${persona.name} response:`,
-          error,
-        );
+        this.logger.error(`Error processing ${persona.name} response:`, error);
       }
     }
 
@@ -114,78 +175,9 @@ export class OrchestrationService {
     speaker: string | null;
     message: Message | null;
   }> {
-    const conversation = await this.conversationsService.findOne(conversationId);
-    const personas = await this.personasService.findByIds(
-      conversation.activePersonas,
-    );
-
-    if (!personas.length) {
-      this.logger.warn(`No personas configured for conversation ${conversationId}`);
-      return { speaker: null, message: null };
-    }
-
-    const speakerIndex = conversation.turnIndex % personas.length;
-    const speaker = personas[speakerIndex];
-
-    // Emit typing indicator for the selected agent
-    this.boardGateway.emitAgentTyping(conversationId, speaker.id);
-
-    const history = await this.messagesService.findAllByConversation(
-      conversationId,
-    );
-    const conversationHistory = history.map((msg) => ({
-      role: msg.role,
-      content: msg.content,
-    }));
-
-    const { response, usage } = await this.aiService.generateAgentResponse(
-      speaker.systemPrompt,
-      'Continue the deliberation toward a concrete plan, considering prior turns and uploaded context.',
-      conversationHistory,
-    );
-
-    const agentMessage = await this.messagesService.createAgentMessage(
-      conversation,
-      speaker.id,
-      response.content,
-      {
-        reasoning: response.reasoning,
-        confidence: response.confidence,
-        suggestions: response.suggestions,
-      },
-    );
-
-    await this.analyticsService.updateTokens(
-      conversationId,
-      usage?.prompt_tokens || 0,
-      usage?.completion_tokens || 0,
-    );
-
-    await this.analyticsService.incrementAgentParticipation(
-      conversationId,
-      speaker.id,
-    );
-
-    conversation.currentSpeaker = speaker.id;
-    conversation.turnIndex += 1;
-
-    // Advance round when every persona has spoken
-    const completedRounds = Math.floor(conversation.turnIndex / personas.length);
-    conversation.currentRound = completedRounds;
-    if (conversation.currentRound >= conversation.maxRounds) {
-      conversation.status = ConversationStatus.COMPLETED;
-    }
-
-    await this.conversationsService.update(conversation.id, {
-      currentSpeaker: conversation.currentSpeaker,
-      turnIndex: conversation.turnIndex,
-      currentRound: conversation.currentRound,
-      status: conversation.status,
-    } as any);
-
-    this.boardGateway.emitAgentResponse(conversationId, agentMessage);
-
-    return { speaker: speaker.id, message: agentMessage };
+    // Step mechanism retired to avoid user confusion; keep signature but no-op.
+    this.logger.warn(`stepConversationTurn is deprecated and returns no message for conversation ${conversationId}`);
+    return { speaker: null, message: null };
   }
 
   async generateDiscussionSummary(conversationId: string): Promise<string> {
@@ -205,5 +197,256 @@ export class OrchestrationService {
 
   private delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private selectPersonaForMessage(personas: Persona[], userMessage: string): Persona | null {
+    if (!personas.length) {
+      return null;
+    }
+
+    const text = userMessage.toLowerCase();
+
+    const keywordBuckets: Record<string, string[]> = {
+      developer: [
+        'api',
+        'endpoint',
+        'integration',
+        'schema',
+        'sql',
+        'database',
+        'query',
+        'migration',
+        'code',
+        'typescript',
+        'nest',
+        'test',
+        'testing',
+        'qa',
+        'quality assurance',
+        'unit',
+        'integration test',
+        'e2e',
+        'cicd',
+        'pipeline',
+        'automation',
+        'jest',
+        'unit test',
+        'bug',
+        'stack trace',
+        'error',
+        'log',
+        'debug',
+        'architecture',
+        'design doc',
+        'diagram',
+      ],
+      pm: [
+        'pm',
+        'product manager',
+        'product management',
+        'roadmap',
+        'requirements',
+        'scope',
+        'milestone',
+        'timeline',
+        'tradeoff',
+        'prioritize',
+        'backlog',
+        'ticket',
+        'story',
+        'sprint',
+        'acceptance criteria',
+        'launch',
+        'rollout',
+        'go to market',
+      ],
+      marketing: [
+        'campaign',
+        'landing page',
+        'copy',
+        'seo',
+        'ad',
+        'funnel',
+        'conversion',
+        'engagement',
+        'cta',
+        'audience',
+        'positioning',
+        'go to market',
+      ],
+      design: [
+        'ui',
+        'ux',
+        'mock',
+        'figma',
+        'prototype',
+        'interaction',
+        'accessibility',
+        'responsive',
+        'visual',
+        'layout',
+        'color',
+        'typography',
+      ],
+      legal: [
+        'contract',
+        'terms',
+        'privacy',
+        'gdpr',
+        'ccpa',
+        'compliance',
+        'license',
+        'nda',
+      ],
+      finance: [
+        'budget',
+        'pricing',
+        'cost',
+        'margin',
+        'roi',
+        'revenue',
+        'expense',
+        'invoice',
+        'forecast',
+      ],
+    };
+
+    const personaCategoryScore = (persona: Persona): number => {
+      let score = 0;
+      const idName = `${persona.id} ${persona.name} ${persona.description || ''}`.toLowerCase();
+
+      const bumpIfIncludes = (category: string, weight: number) => {
+        if (idName.includes(category)) {
+          score += weight;
+        }
+      };
+
+      bumpIfIncludes('developer', 2);
+      bumpIfIncludes('engineer', 2);
+      bumpIfIncludes('marketing', 2);
+      bumpIfIncludes('growth', 1);
+      bumpIfIncludes('design', 2);
+      bumpIfIncludes('product', 2);
+      bumpIfIncludes('pm', 2);
+      bumpIfIncludes('legal', 2);
+      bumpIfIncludes('finance', 2);
+
+      const capabilities = (persona.capabilities || []).map((c) => c.toLowerCase());
+      const addCapabilityScore = (cap: string, weight: number) => {
+        if (capabilities.some((c) => c.includes(cap))) {
+          score += weight;
+        }
+      };
+
+      addCapabilityScore('api', 1);
+      addCapabilityScore('code', 1);
+      addCapabilityScore('sql', 1);
+      addCapabilityScore('marketing', 1);
+      addCapabilityScore('growth', 1);
+      addCapabilityScore('ux', 1);
+      addCapabilityScore('ui', 1);
+      addCapabilityScore('qa', 2);
+      addCapabilityScore('test', 2);
+      addCapabilityScore('testing', 2);
+      addCapabilityScore('quality', 1);
+      addCapabilityScore('automation', 1);
+      addCapabilityScore('pm', 3);
+      addCapabilityScore('product', 3);
+      addCapabilityScore('roadmap', 2);
+      addCapabilityScore('requirements', 2);
+      addCapabilityScore('legal', 1);
+      addCapabilityScore('compliance', 1);
+      addCapabilityScore('finance', 1);
+
+      Object.entries(keywordBuckets).forEach(([category, keywords]) => {
+        keywords.forEach((keyword) => {
+          if (text.includes(keyword)) {
+            if (category === 'developer' && (idName.includes('dev') || idName.includes('engineer'))) {
+              score += 3;
+            } else if (category === 'marketing' && idName.includes('marketing')) {
+              score += 3;
+            } else if (category === 'design' && idName.includes('design')) {
+              score += 3;
+            } else if (category === 'pm' && (idName.includes('pm') || idName.includes('product'))) {
+              score += 3;
+            } else if (category === 'legal' && idName.includes('legal')) {
+              score += 3;
+            } else if (category === 'finance' && idName.includes('finance')) {
+              score += 3;
+            } else {
+              score += 1;
+            }
+          }
+        });
+      });
+
+      return score;
+    };
+
+    let bestPersona: Persona | null = null;
+    let bestScore = -1;
+
+    for (const persona of personas) {
+      const score = personaCategoryScore(persona);
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestPersona = persona;
+      }
+    }
+
+    // If everything tied at 0, stick with the first persona to avoid empty handoff
+    if (bestScore <= 0) {
+      return personas[0] || null;
+    }
+
+    return bestPersona;
+  }
+
+  private async choosePersonaByPrompt(personas: Persona[], userMessage: string): Promise<Persona | null> {
+    if (!personas.length) {
+      return null;
+    }
+
+    const roster = personas
+      .map((p, idx) => {
+        const caps = (p.capabilities || []).join(', ');
+        return `${idx + 1}. id=${p.id} name=${p.name} desc=${p.description || ''} capabilities=${caps}`;
+      })
+      .join('\n');
+
+    const selectionPrompt =
+      'You are a routing agent. Given a user message and a list of personas, pick the single best persona to answer. Strongly prefer a Product Manager/PM persona for planning, coordination, requirements, or when the user mentions PM/product. Only choose Developer when the ask is clearly code/architecture/testing; choose Designer only for UX/UI/visual asks. Respond with ONLY a JSON object like {"personaId":"<id>"}.';
+
+    try {
+      const { response } = await this.aiService.generateAgentResponse(
+        selectionPrompt,
+        `User message: ${userMessage}\n\nPersonas:\n${roster}\n\nReturn JSON with personaId.`,
+        [],
+      );
+
+      const content = response.content || '';
+      const parsed = JSON.parse(content.trim());
+      const personaId = parsed?.personaId as string | undefined;
+
+      if (!personaId) {
+        return null;
+      }
+
+      return personas.find((p) => p.id === personaId) || null;
+    } catch (error) {
+      this.logger.warn('Router prompt failed, falling back to heuristic routing', error as any);
+      return null;
+    }
+  }
+
+  private extractTaggedPersonas(personas: Persona[], userMessage: string): Persona[] {
+    const tags = Array.from(userMessage.matchAll(/@([\w-]+)/g)).map((m) => m[1].toLowerCase());
+    if (!tags.length) return [];
+
+    return personas.filter((p) => {
+      const idName = `${p.id} ${p.name}`.toLowerCase();
+      return tags.some((t) => idName.includes(t));
+    });
   }
 }
