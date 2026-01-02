@@ -49,6 +49,12 @@ export class Conversation extends EntityHelper {
   @Column({ type: 'jsonb', nullable: true, name: 'active_personas' })
   activePersonas: string[];
 
+  @Column({ type: 'varchar', length: 255, nullable: true, name: 'current_speaker' })
+  currentSpeaker: string | null;
+
+  @Column({ type: 'int', default: 0, name: 'turn_index' })
+  turnIndex: number;
+
   @Column({ type: 'jsonb', nullable: true })
   metadata: Record<string, any>;
 

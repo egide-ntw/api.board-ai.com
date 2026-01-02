@@ -5,7 +5,7 @@ import { MessagesService } from '../messages/messages.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { BoardGateway } from '../board/board.gateway';
-import { Conversation } from '../conversations/entities/conversation.entity';
+import { Conversation, ConversationStatus } from '../conversations/entities/conversation.entity';
 import { Message } from '../messages/entities/message.entity';
 
 @Injectable()
@@ -108,6 +108,84 @@ export class OrchestrationService {
     );
 
     return agentResponses;
+  }
+
+  async stepConversationTurn(conversationId: string): Promise<{
+    speaker: string | null;
+    message: Message | null;
+  }> {
+    const conversation = await this.conversationsService.findOne(conversationId);
+    const personas = await this.personasService.findByIds(
+      conversation.activePersonas,
+    );
+
+    if (!personas.length) {
+      this.logger.warn(`No personas configured for conversation ${conversationId}`);
+      return { speaker: null, message: null };
+    }
+
+    const speakerIndex = conversation.turnIndex % personas.length;
+    const speaker = personas[speakerIndex];
+
+    // Emit typing indicator for the selected agent
+    this.boardGateway.emitAgentTyping(conversationId, speaker.id);
+
+    const history = await this.messagesService.findAllByConversation(
+      conversationId,
+    );
+    const conversationHistory = history.map((msg) => ({
+      role: msg.role,
+      content: msg.content,
+    }));
+
+    const { response, usage } = await this.aiService.generateAgentResponse(
+      speaker.systemPrompt,
+      'Continue the deliberation toward a concrete plan, considering prior turns and uploaded context.',
+      conversationHistory,
+    );
+
+    const agentMessage = await this.messagesService.createAgentMessage(
+      conversation,
+      speaker.id,
+      response.content,
+      {
+        reasoning: response.reasoning,
+        confidence: response.confidence,
+        suggestions: response.suggestions,
+      },
+    );
+
+    await this.analyticsService.updateTokens(
+      conversationId,
+      usage?.prompt_tokens || 0,
+      usage?.completion_tokens || 0,
+    );
+
+    await this.analyticsService.incrementAgentParticipation(
+      conversationId,
+      speaker.id,
+    );
+
+    conversation.currentSpeaker = speaker.id;
+    conversation.turnIndex += 1;
+
+    // Advance round when every persona has spoken
+    const completedRounds = Math.floor(conversation.turnIndex / personas.length);
+    conversation.currentRound = completedRounds;
+    if (conversation.currentRound >= conversation.maxRounds) {
+      conversation.status = ConversationStatus.COMPLETED;
+    }
+
+    await this.conversationsService.update(conversation.id, {
+      currentSpeaker: conversation.currentSpeaker,
+      turnIndex: conversation.turnIndex,
+      currentRound: conversation.currentRound,
+      status: conversation.status,
+    } as any);
+
+    this.boardGateway.emitAgentResponse(conversationId, agentMessage);
+
+    return { speaker: speaker.id, message: agentMessage };
   }
 
   async generateDiscussionSummary(conversationId: string): Promise<string> {

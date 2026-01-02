@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsOptional, IsArray, IsInt, Min, Max } from 'class-validator';
 
 export class CreateConversationDto {
@@ -16,6 +16,17 @@ export class CreateConversationDto {
   @IsArray()
   @IsOptional()
   activePersonas?: string[];
+
+  @ApiPropertyOptional({ example: 'marketing' })
+  @IsString()
+  @IsOptional()
+  currentSpeaker?: string;
+
+  @ApiPropertyOptional({ example: 0, minimum: 0 })
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  turnIndex?: number;
 
   @ApiPropertyOptional({ example: 3, minimum: 1, maximum: 10 })
   @IsInt()

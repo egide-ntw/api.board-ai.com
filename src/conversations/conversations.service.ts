@@ -18,15 +18,20 @@ export class ConversationsService {
     createDto: CreateConversationDto,
     user?: User,
   ): Promise<Conversation> {
+    const personas = createDto.activePersonas || [
+      'marketing',
+      'developer',
+      'designer',
+    ];
+    const initialSpeaker = createDto.currentSpeaker || personas[0] || null;
+
     const conversation = this.conversationsRepository.create({
       ...createDto,
       user: user || null,
       title: createDto.title || 'New Conversation',
-      activePersonas: createDto.activePersonas || [
-        'marketing',
-        'developer',
-        'designer',
-      ],
+      activePersonas: personas,
+      currentSpeaker: initialSpeaker,
+      turnIndex: createDto.turnIndex ?? 0,
       maxRounds: createDto.maxRounds || 3,
       status: ConversationStatus.ACTIVE,
     });
@@ -67,6 +72,15 @@ export class ConversationsService {
     const conversation = await this.findOne(id);
 
     Object.assign(conversation, updateConversationDto);
+
+    // If active personas changed and current speaker is missing, reset speaker
+    if (
+      updateConversationDto.activePersonas &&
+      !updateConversationDto.activePersonas.includes(conversation.currentSpeaker || '')
+    ) {
+      conversation.currentSpeaker = updateConversationDto.activePersonas[0] || null;
+      conversation.turnIndex = 0;
+    }
 
     return this.conversationsRepository.save(conversation);
   }

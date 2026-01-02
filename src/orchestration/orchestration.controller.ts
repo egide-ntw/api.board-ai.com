@@ -56,6 +56,19 @@ export class OrchestrationController {
     };
   }
 
+  @Post('conversations/:id/step')
+  @ApiOperation({
+    summary: 'Advance conversation by one persona turn',
+    description: 'Selects the next persona, generates a response, updates turn metadata, and streams events.'
+  })
+  async stepConversation(@Param('id') conversationId: string) {
+    const result = await this.orchestrationService.stepConversationTurn(conversationId);
+    return {
+      success: true,
+      data: result,
+    };
+  }
+
   @Get('conversations/:id/summary')
   async generateSummary(@Param('id') conversationId: string) {
     const summary =
