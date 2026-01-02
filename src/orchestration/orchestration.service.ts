@@ -60,6 +60,7 @@ export class OrchestrationService {
     const primary = routedPersona || heuristicPersona || pmFallback || primaryPool[0];
 
     let turnIndex = conversation.turnIndex || 0;
+    const responded = new Set<string>();
 
     // Decide responder set: if tagging, only tagged personas respond (no reactions from others). Otherwise, primary + reactions from the rest.
     const responderList = taggingMode ? primaryPool : [primary];
@@ -87,6 +88,8 @@ export class OrchestrationService {
 
         agentResponses.push(agentMessage);
 
+        responded.add(persona.id);
+
         await this.analyticsService.updateTokens(
           conversationId,
           usage?.prompt_tokens || 0,
@@ -106,9 +109,59 @@ export class OrchestrationService {
           turnIndex,
         } as any);
 
-        // If not tagging and there are others, collect brief reactions
-        if (!taggingMode) {
-          const otherPersonas = personas.filter((p) => p.id !== persona.id);
+        // If the agent tagged personas in their message, treat it as a request for those personas to reply
+        const taggedInAgentMessage = this.extractTaggedPersonas(personas, agentMessage.content)
+          .filter((p) => !responded.has(p.id));
+
+        if (taggedInAgentMessage.length > 0) {
+          const reactionHistory = [...conversationHistory, { role: 'agent', content: agentMessage.content }];
+
+          for (const other of taggedInAgentMessage) {
+            try {
+              this.boardGateway.emitAgentTyping(conversationId, other.id);
+
+              const reactionPrompt = `You are ${other.name}. Respond to the tagged request from ${persona.name}. Keep it concise (<=120 words).`;
+
+              const { response: reaction, usage: reactionUsage } =
+                await this.aiService.generateAgentResponse(
+                  other.systemPrompt,
+                  `${reactionPrompt}\n\nUser message: ${userMessage}\nTagged request: ${agentMessage.content}`,
+                  reactionHistory,
+                );
+
+              const reactionMessage = await this.messagesService.createAgentMessage(
+                conversation,
+                other.id,
+                reaction.content,
+                {
+                  reasoning: reaction.reasoning,
+                  confidence: reaction.confidence,
+                  suggestions: reaction.suggestions,
+                },
+              );
+
+              agentResponses.push(reactionMessage);
+              responded.add(other.id);
+
+              await this.analyticsService.updateTokens(
+                conversationId,
+                reactionUsage?.prompt_tokens || 0,
+                reactionUsage?.completion_tokens || 0,
+              );
+
+              await this.analyticsService.incrementAgentParticipation(
+                conversationId,
+                other.id,
+              );
+
+              this.boardGateway.emitAgentResponse(conversationId, reactionMessage);
+            } catch (reactionError) {
+              this.logger.error(`Error processing tagged reaction from ${other.name}:`, reactionError);
+            }
+          }
+        } else if (!taggingMode) {
+          // If not tagging and there are others, collect brief reactions as before
+          const otherPersonas = personas.filter((p) => p.id !== persona.id && !responded.has(p.id));
           const reactionHistory = [...conversationHistory, { role: 'agent', content: agentMessage.content }];
 
           for (const other of otherPersonas) {
@@ -136,6 +189,7 @@ export class OrchestrationService {
               );
 
               agentResponses.push(reactionMessage);
+              responded.add(other.id);
 
               await this.analyticsService.updateTokens(
                 conversationId,

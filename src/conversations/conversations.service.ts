@@ -19,9 +19,11 @@ export class ConversationsService {
     user?: User,
   ): Promise<Conversation> {
     const personas = createDto.activePersonas || [
-      'marketing',
+      'pm',
       'developer',
-      'designer',
+      'marketing',
+      'ux',
+      'qa',
     ];
     const initialSpeaker = createDto.currentSpeaker || personas[0] || null;
 

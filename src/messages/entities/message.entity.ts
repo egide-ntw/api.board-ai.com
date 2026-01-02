@@ -23,6 +23,9 @@ export enum AgentType {
   DESIGNER = 'designer',
   LEGAL = 'legal',
   FINANCE = 'finance',
+  PM = 'pm',
+  UX = 'ux',
+  QA = 'qa',
 }
 
 @Entity('messages')
