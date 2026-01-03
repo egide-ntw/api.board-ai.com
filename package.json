@@ -27,7 +27,8 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "env-cmd jest --config ./test/jest-e2e.json",
-    "prepare": "is-ci || husky install"
+    "prepare": "is-ci || husky install",
+    "db:reset": "pnpm run schema:drop && pnpm run migration:run && pnpm run seed:run"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.312.0",
@@ -92,6 +93,7 @@
     "uuid": "^13.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^8.57.0",
     "@nestjs/cli": "9.4.1",
     "@nestjs/schematics": "9.1.0",
     "@nestjs/testing": "9.4.0",
@@ -109,14 +111,17 @@
     "@typescript-eslint/eslint-plugin": "5.59.0",
     "@typescript-eslint/parser": "5.59.0",
     "env-cmd": "10.1.0",
-    "eslint": "8.38.0",
+    "eslint": "^8.57.0",
     "eslint-config-prettier": "8.8.0",
     "eslint-plugin-import": "2.27.5",
     "eslint-plugin-prettier": "4.2.1",
+    "eslint-plugin-react": "^7.37.5",
+    "globals": "^17.0.0",
     "husky": "8.0.3",
     "hygen": "6.2.11",
     "is-ci": "3.0.1",
     "jest": "29.5.0",
+    "jiti": "^2.6.1",
     "prettier": "2.8.8",
     "supertest": "6.3.3",
     "ts-jest": "29.1.0",
@@ -124,7 +129,8 @@
     "ts-node": "10.9.1",
     "tsconfig-paths": "4.2.0",
     "tslib": "2.5.0",
-    "typescript": "5.0.4"
+    "typescript": "5.0.4",
+    "typescript-eslint": "^8.51.0"
   },
   "jest": {
     "moduleFileExtensions": [

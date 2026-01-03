@@ -1,8 +1,8 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
 // Adds pm, ux, qa values to messages_agent_type_enum
-export class AddAgentTypesPmUxQa1704144000000 implements MigrationInterface {
-  name = 'AddAgentTypesPmUxQa1704144000000';
+export class AddAgentTypesPmUxQa1767315000000 implements MigrationInterface {
+  name = 'AddAgentTypesPmUxQa1767315000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
