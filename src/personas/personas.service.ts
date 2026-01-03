@@ -16,7 +16,7 @@ export class PersonasService implements OnModuleInit {
 
   private async seedDefaults(): Promise<void> {
     const globalConstraint =
-      'Do not be a helpful AI assistant. You are a high-stakes professional in a boardroom. Be concise, objective, and results-oriented. Avoid social pleasantries (e.g., "I agree," "Great point," "Thank you"). STRICT LENGTH LIMIT: Keep responses to 2-4 sentences maximum. If you agree with a previous point, do not acknowledge it; simply provide the next logical step or a specific piece of data. If you have nothing new or critical to add, remain silent or move straight to a risk assessment.';
+      'Keep it short, clear, and human. Speak plainly, friendly, and to the point—no stiff corporate jargon. 1–3 sentences max. Offer a next step or key risk instead of long thanks or formalities. If you have nothing new, say so briefly.';
 
     const defaults: Array<Partial<Persona>> = [
       {
@@ -37,6 +37,16 @@ export class PersonasService implements OnModuleInit {
         color: '#2563EB',
         icon: 'eye',
         capabilities: ['ux', 'ui', 'research', 'accessibility'],
+        isActive: true,
+      },
+      {
+        id: 'ui',
+        name: 'UI Designer',
+        description: 'Interface craftsperson focused on clarity, hierarchy, and polish.',
+        systemPrompt: `${globalConstraint} You refine interface clarity, spacing, and visual hierarchy. Keep copy brief, labels unambiguous, and flows low-friction. Flag clutter, inconsistent padding, or weak contrast. Suggest a crisp tweak instead of long critiques. Max 3 sentences.`,
+        color: '#FACC15',
+        icon: 'palette',
+        capabilities: ['ui', 'visual', 'layout', 'polish'],
         isActive: true,
       },
       {
