@@ -42,6 +42,7 @@ export class OrchestrationService {
         persona.systemPrompt,
         userMessage,
         conversationHistory,
+        { id: persona.id, name: persona.name, role: persona.description },
       );
 
       const agentMessage = await this.messagesService.createAgentMessage(
@@ -138,82 +139,49 @@ export class OrchestrationService {
       );
       turnIndex += 1;
     } else {
-      // Ordered chain
-      const orderedIds = ['marketing', 'developer', 'ux', 'pm', 'qa'];
-      const orderedPersonas = orderedIds
-        .map((id) => personas.find((p) => p.id === id))
-        .filter((p): p is Persona => Boolean(p));
-
-      // Tagged override: tagged personas first, then PM to steer, then QA if present
-      let responderList: Persona[];
+      // Tagged mode: only tagged personas respond, in order of appearance
       if (taggingMode) {
-        responderList = [...taggedPersonas];
-        if (pmPersona && !responderList.find((p) => p.id === 'pm')) {
-          responderList.push(pmPersona);
-        }
-        const qaPersona = personas.find((p) => p.id === 'qa');
-        if (qaPersona && !responderList.find((p) => p.id === 'qa')) {
-          responderList.push(qaPersona);
+        for (let i = 0; i < taggedPersonas.length; i += 1) {
+          const persona = taggedPersonas[i];
+          await this.handlePersonaResponse(
+            conversation,
+            persona,
+            userMessage,
+            conversationHistory,
+            conversationId,
+            agentResponses,
+            responded,
+            turnIndex,
+          );
+          turnIndex += 1;
+          if (i < taggedPersonas.length - 1) {
+            await this.delay(800);
+          }
         }
       } else {
-        responderList = orderedPersonas;
-      }
+        // No tags: PM orchestrates first, then others in a fixed order
+        const orderedIds = ['pm', 'developer', 'ux', 'qa', 'marketing'];
+        const orderedPersonas = orderedIds
+          .map((id) => personas.find((p) => p.id === id))
+          .filter((p): p is Persona => Boolean(p));
 
-      // Run chain: non-PM/QA first, then PM (if allowed), then QA last
-      const basePersonas = responderList.filter((p) => p.id !== 'pm' && p.id !== 'qa');
-      const qaPersona = responderList.find((p) => p.id === 'qa');
-
-      for (let i = 0; i < basePersonas.length; i += 1) {
-        const persona = basePersonas[i];
-        await this.handlePersonaResponse(
-          conversation,
-          persona,
-          userMessage,
-          conversationHistory,
-          conversationId,
-          agentResponses,
-          responded,
-          turnIndex,
-        );
-        turnIndex += 1;
-
-        const moreComing = i < basePersonas.length - 1 || Boolean(pmPersona) || Boolean(qaPersona);
-        if (moreComing) {
-          await this.delay(1000);
+        for (let i = 0; i < orderedPersonas.length; i += 1) {
+          const persona = orderedPersonas[i];
+          await this.handlePersonaResponse(
+            conversation,
+            persona,
+            userMessage,
+            conversationHistory,
+            conversationId,
+            agentResponses,
+            responded,
+            turnIndex,
+          );
+          turnIndex += 1;
+          if (i < orderedPersonas.length - 1) {
+            await this.delay(800);
+          }
         }
-      }
-
-      const pmAllowed = pmPersona && (responderList.length <= 1 || responded.size >= 1 || taggingMode);
-      if (pmPersona && pmAllowed) {
-        await this.handlePersonaResponse(
-          conversation,
-          pmPersona,
-          userMessage,
-          conversationHistory,
-          conversationId,
-          agentResponses,
-          responded,
-          turnIndex,
-        );
-        turnIndex += 1;
-
-        if (qaPersona) {
-          await this.delay(1000);
-        }
-      }
-
-      if (qaPersona && responded.size > 0) {
-        await this.handlePersonaResponse(
-          conversation,
-          qaPersona,
-          userMessage,
-          conversationHistory,
-          conversationId,
-          agentResponses,
-          responded,
-          turnIndex,
-        );
-        turnIndex += 1;
       }
     }
 
