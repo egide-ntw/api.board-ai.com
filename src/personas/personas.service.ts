@@ -16,15 +16,15 @@ export class PersonasService implements OnModuleInit {
 
   private async seedDefaults(): Promise<void> {
     const globalConstraint = `
-Boardroom Protocol (Mentor Tone, young dev audience):
-- Gatekeeper: If the user just greets, only PM replies; others stay silent unless tagged.
-- Chain: MKT -> DEV -> UX -> PM -> QA. No one speaks for another persona or quotes others.
-- Tag override: If tagged (e.g., @DEV), that persona replies in <=2 sentences; PM then steers back to the main goal.
-- Banned phrases: "I agree", "Great point", "As a [role]", "Thank you", "Primary response".
-- Length: 2-3 sentences max. Bullets only for data/budget. Each reply must include a tip, warning, or resource.
-- Tone: Friendly, direct startup mentor. Use clear, modern dev slang (MVP, shipping, stack, friction) but keep it accessible.
-- Budget mindset: $6k total. Own the spend; avoid scope creep. Final state: PM allocates full $6k, DEV confirms feasible, QA calls primary risk, then deliver STRATEGIC VERDICT + budget.
-`.trim();
+      Boardroom Protocol (Mentor Tone, young dev audience):
+      - Gatekeeper: If the user just greets, only PM replies; others stay silent unless tagged.
+      - Chain: MKT -> DEV -> UX -> PM -> QA. No one speaks for another persona or quotes others.
+      - Tag override: If tagged (e.g., @DEV), that persona replies in <=2 sentences; PM then steers back to the main goal.
+      - Banned phrases: "I agree", "Great point", "As a [role]", "Thank you", "Primary response".
+      - Length: 2-3 sentences max. Bullets only for data/budget. Each reply must include a tip, warning, or resource.
+      - Tone: Friendly, direct startup mentor. Use clear, modern dev slang (MVP, shipping, stack, friction) but keep it accessible.
+      - Budget mindset: $6k total. Own the spend; avoid scope creep. Final state: PM allocates full $6k, DEV confirms feasible, QA calls primary risk, then deliver STRATEGIC VERDICT + budget.
+      `.trim();
 
     const defaults: Array<Partial<Persona>> = [
       {

@@ -66,8 +66,28 @@ export class BoardGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   // Emit agent typing indicator
-  emitAgentTyping(conversationId: string, agentType: string) {    if (!this.server) return;    this.server.to(`conversation:${conversationId}`).emit('agent_typing', {
+  emitAgentTyping(conversationId: string, agentType: string) {
+    if (!this.server) return;
+    this.server.to(`conversation:${conversationId}`).emit('agent_typing', {
       agentType,
+      timestamp: new Date(),
+    });
+  }
+
+  emitAgentTypingStart(conversationId: string, agentId: string, agentName?: string) {
+    if (!this.server) return;
+    this.server.to(`conversation:${conversationId}`).emit('agent_typing_start', {
+      agentId,
+      agentName,
+      timestamp: new Date(),
+    });
+  }
+
+  emitAgentTypingStop(conversationId: string, agentId: string, agentName?: string) {
+    if (!this.server) return;
+    this.server.to(`conversation:${conversationId}`).emit('agent_typing_stop', {
+      agentId,
+      agentName,
       timestamp: new Date(),
     });
   }
@@ -77,6 +97,14 @@ export class BoardGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!this.server) return;
     this.server.to(`conversation:${conversationId}`).emit('agent_response', {
       message,
+      timestamp: new Date(),
+    });
+  }
+
+  emitAgentMessage(conversationId: string, payload: any) {
+    if (!this.server) return;
+    this.server.to(`conversation:${conversationId}`).emit('agent_message_received', {
+      ...payload,
       timestamp: new Date(),
     });
   }

@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { v4 as uuidv4 } from 'uuid';
 import { AiService } from '../ai/ai.service';
 import { PersonasService } from '../personas/personas.service';
 import { MessagesService } from '../messages/messages.service';
@@ -33,7 +34,9 @@ export class OrchestrationService {
     turnIndex: number,
   ): Promise<void> {
     try {
-      this.boardGateway.emitAgentTyping(conversationId, persona.id);
+      this.boardGateway.emitAgentTypingStart(conversationId, persona.id, persona.name);
+
+      await this.delayRange(1500, 3000);
 
       const { response, usage } = await this.aiService.generateAgentResponse(
         persona.systemPrompt,
@@ -55,6 +58,18 @@ export class OrchestrationService {
       agentResponses.push(agentMessage);
       responded.add(persona.id);
 
+      const messagePayload = {
+        id: agentMessage.id || uuidv4(),
+        conversationId,
+        agentId: persona.id,
+        agentName: persona.name,
+        content: agentMessage.content,
+        createdAt: agentMessage.createdAt,
+      };
+
+      this.boardGateway.emitAgentMessage(conversationId, messagePayload);
+      this.boardGateway.emitAgentTypingStop(conversationId, persona.id, persona.name);
+
       await this.analyticsService.updateTokens(
         conversationId,
         usage?.prompt_tokens || 0,
@@ -65,8 +80,6 @@ export class OrchestrationService {
         conversationId,
         persona.id,
       );
-
-      this.boardGateway.emitAgentResponse(conversationId, agentMessage);
 
       await this.conversationsService.update(conversationId, {
         currentSpeaker: persona.id,
@@ -147,8 +160,11 @@ export class OrchestrationService {
       }
 
       // Run chain: non-PM/QA first, then PM (if allowed), then QA last
-      for (const persona of responderList) {
-        if (persona.id === 'pm' || persona.id === 'qa') continue;
+      const basePersonas = responderList.filter((p) => p.id !== 'pm' && p.id !== 'qa');
+      const qaPersona = responderList.find((p) => p.id === 'qa');
+
+      for (let i = 0; i < basePersonas.length; i += 1) {
+        const persona = basePersonas[i];
         await this.handlePersonaResponse(
           conversation,
           persona,
@@ -160,6 +176,11 @@ export class OrchestrationService {
           turnIndex,
         );
         turnIndex += 1;
+
+        const moreComing = i < basePersonas.length - 1 || Boolean(pmPersona) || Boolean(qaPersona);
+        if (moreComing) {
+          await this.delay(1000);
+        }
       }
 
       const pmAllowed = pmPersona && (responderList.length <= 1 || responded.size >= 1 || taggingMode);
@@ -175,9 +196,12 @@ export class OrchestrationService {
           turnIndex,
         );
         turnIndex += 1;
+
+        if (qaPersona) {
+          await this.delay(1000);
+        }
       }
 
-      const qaPersona = responderList.find((p) => p.id === 'qa');
       if (qaPersona && responded.size > 0) {
         await this.handlePersonaResponse(
           conversation,
@@ -231,6 +255,12 @@ export class OrchestrationService {
 
   private delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private delayRange(minMs: number, maxMs: number): Promise<void> {
+    const span = Math.max(maxMs - minMs, 0);
+    const jitter = Math.random() * span;
+    return this.delay(minMs + jitter);
   }
 
   private selectPersonaForMessage(personas: Persona[], userMessage: string): Persona | null {

@@ -3,6 +3,7 @@ import {
   ValidationPipe,
   VersioningType,
 } from '@nestjs/common';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -28,6 +29,8 @@ async function bootstrap() {
   });
   app.useGlobalPipes(new ValidationPipe(validationOptions));
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
+  // Ensure Socket.IO gateway mounts correctly on Express server
+  app.useWebSocketAdapter(new IoAdapter(app));
 
   const options = new DocumentBuilder()
     .setTitle('Board AI - Multi-Agent Debate System')
