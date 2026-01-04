@@ -22,6 +22,61 @@ export class OrchestrationService {
     private boardGateway: BoardGateway,
   ) {}
 
+  private async handlePersonaResponse(
+    conversation: Conversation,
+    persona: Persona,
+    userMessage: string,
+    conversationHistory: Array<{ role: string; content: string }>,
+    conversationId: string,
+    agentResponses: Message[],
+    responded: Set<string>,
+    turnIndex: number,
+  ): Promise<void> {
+    try {
+      this.boardGateway.emitAgentTyping(conversationId, persona.id);
+
+      const { response, usage } = await this.aiService.generateAgentResponse(
+        persona.systemPrompt,
+        userMessage,
+        conversationHistory,
+      );
+
+      const agentMessage = await this.messagesService.createAgentMessage(
+        conversation,
+        persona.id,
+        response.content,
+        {
+          reasoning: response.reasoning,
+          confidence: response.confidence,
+          suggestions: response.suggestions,
+        },
+      );
+
+      agentResponses.push(agentMessage);
+      responded.add(persona.id);
+
+      await this.analyticsService.updateTokens(
+        conversationId,
+        usage?.prompt_tokens || 0,
+        usage?.completion_tokens || 0,
+      );
+
+      await this.analyticsService.incrementAgentParticipation(
+        conversationId,
+        persona.id,
+      );
+
+      this.boardGateway.emitAgentResponse(conversationId, agentMessage);
+
+      await this.conversationsService.update(conversationId, {
+        currentSpeaker: persona.id,
+        turnIndex,
+      } as any);
+    } catch (error) {
+      this.logger.error(`Error processing ${persona.name} response:`, error);
+    }
+  }
+
   async processUserMessage(
     conversationId: string,
     userMessage: string,
@@ -49,167 +104,92 @@ export class OrchestrationService {
     const taggedPersonas = this.extractTaggedPersonas(personas, userMessage);
     const taggingMode = taggedPersonas.length > 0;
 
-    // Primary responder chosen via routing prompt (fallback to keyword heuristic)
-    const routedPersona = taggingMode ? null : await this.choosePersonaByPrompt(personas, userMessage);
-    const heuristicPersona = taggingMode ? null : this.selectPersonaForMessage(personas, userMessage);
-    const pmFallback = personas.find((p) => {
-      const idName = `${p.id} ${p.name}`.toLowerCase();
-      return idName.includes('pm') || idName.includes('product');
-    });
-    const primaryPool = taggingMode ? taggedPersonas : personas;
-    const primary = routedPersona || heuristicPersona || pmFallback || primaryPool[0];
+    // Greeting gatekeeper: if only greeting, only PM replies
+    const isGreeting = /^\s*(hi|hello|hey)\b/i.test(userMessage.trim());
+    const pmPersona = personas.find((p) => p.id === 'pm');
 
     let turnIndex = conversation.turnIndex || 0;
     const responded = new Set<string>();
 
-    // Decide responder set: if tagging, only tagged personas respond (no reactions from others). Otherwise, primary + reactions from the rest.
-    const responderList = taggingMode ? primaryPool : [primary];
+    // Greeting gate: only PM responds
+    if (isGreeting && pmPersona) {
+      await this.handlePersonaResponse(
+        conversation,
+        pmPersona,
+        userMessage,
+        conversationHistory,
+        conversationId,
+        agentResponses,
+        responded,
+        turnIndex,
+      );
+      turnIndex += 1;
+    } else {
+      // Ordered chain
+      const orderedIds = ['marketing', 'developer', 'ux', 'pm', 'qa'];
+      const orderedPersonas = orderedIds
+        .map((id) => personas.find((p) => p.id === id))
+        .filter((p): p is Persona => Boolean(p));
 
-    for (const persona of responderList) {
-      try {
-        this.boardGateway.emitAgentTyping(conversationId, persona.id);
+      // Tagged override: tagged personas first, then PM to steer, then QA if present
+      let responderList: Persona[];
+      if (taggingMode) {
+        responderList = [...taggedPersonas];
+        if (pmPersona && !responderList.find((p) => p.id === 'pm')) {
+          responderList.push(pmPersona);
+        }
+        const qaPersona = personas.find((p) => p.id === 'qa');
+        if (qaPersona && !responderList.find((p) => p.id === 'qa')) {
+          responderList.push(qaPersona);
+        }
+      } else {
+        responderList = orderedPersonas;
+      }
 
-        const { response, usage } = await this.aiService.generateAgentResponse(
-          persona.systemPrompt,
+      // Run chain: non-PM/QA first, then PM (if allowed), then QA last
+      for (const persona of responderList) {
+        if (persona.id === 'pm' || persona.id === 'qa') continue;
+        await this.handlePersonaResponse(
+          conversation,
+          persona,
           userMessage,
           conversationHistory,
-        );
-
-        const agentMessage = await this.messagesService.createAgentMessage(
-          conversation,
-          persona.id,
-          response.content,
-          {
-            reasoning: response.reasoning,
-            confidence: response.confidence,
-            suggestions: response.suggestions,
-          },
-        );
-
-        agentResponses.push(agentMessage);
-
-        responded.add(persona.id);
-
-        await this.analyticsService.updateTokens(
           conversationId,
-          usage?.prompt_tokens || 0,
-          usage?.completion_tokens || 0,
-        );
-
-        await this.analyticsService.incrementAgentParticipation(
-          conversationId,
-          persona.id,
-        );
-
-        this.boardGateway.emitAgentResponse(conversationId, agentMessage);
-
-        turnIndex += 1;
-        await this.conversationsService.update(conversationId, {
-          currentSpeaker: persona.id,
+          agentResponses,
+          responded,
           turnIndex,
-        } as any);
+        );
+        turnIndex += 1;
+      }
 
-        // If the agent tagged personas in their message, treat it as a request for those personas to reply
-        const taggedInAgentMessage = this.extractTaggedPersonas(personas, agentMessage.content)
-          .filter((p) => !responded.has(p.id));
+      const pmAllowed = pmPersona && (responderList.length <= 1 || responded.size >= 1 || taggingMode);
+      if (pmPersona && pmAllowed) {
+        await this.handlePersonaResponse(
+          conversation,
+          pmPersona,
+          userMessage,
+          conversationHistory,
+          conversationId,
+          agentResponses,
+          responded,
+          turnIndex,
+        );
+        turnIndex += 1;
+      }
 
-        if (taggedInAgentMessage.length > 0) {
-          const reactionHistory = [...conversationHistory, { role: 'agent', content: agentMessage.content }];
-
-          for (const other of taggedInAgentMessage) {
-            try {
-              this.boardGateway.emitAgentTyping(conversationId, other.id);
-
-              const reactionPrompt = `You are ${other.name}. Respond to the tagged request from ${persona.name}. Keep it concise (<=120 words).`;
-
-              const { response: reaction, usage: reactionUsage } =
-                await this.aiService.generateAgentResponse(
-                  other.systemPrompt,
-                  `${reactionPrompt}\n\nUser message: ${userMessage}\nTagged request: ${agentMessage.content}`,
-                  reactionHistory,
-                );
-
-              const reactionMessage = await this.messagesService.createAgentMessage(
-                conversation,
-                other.id,
-                reaction.content,
-                {
-                  reasoning: reaction.reasoning,
-                  confidence: reaction.confidence,
-                  suggestions: reaction.suggestions,
-                },
-              );
-
-              agentResponses.push(reactionMessage);
-              responded.add(other.id);
-
-              await this.analyticsService.updateTokens(
-                conversationId,
-                reactionUsage?.prompt_tokens || 0,
-                reactionUsage?.completion_tokens || 0,
-              );
-
-              await this.analyticsService.incrementAgentParticipation(
-                conversationId,
-                other.id,
-              );
-
-              this.boardGateway.emitAgentResponse(conversationId, reactionMessage);
-            } catch (reactionError) {
-              this.logger.error(`Error processing tagged reaction from ${other.name}:`, reactionError);
-            }
-          }
-        } else if (!taggingMode) {
-          // If not tagging and there are others, collect brief reactions as before
-          const otherPersonas = personas.filter((p) => p.id !== persona.id && !responded.has(p.id));
-          const reactionHistory = [...conversationHistory, { role: 'agent', content: agentMessage.content }];
-
-          for (const other of otherPersonas) {
-            try {
-              this.boardGateway.emitAgentTyping(conversationId, other.id);
-
-              const reactionPrompt = `You are ${other.name}. Another persona answered the user. Briefly react: do you agree, disagree, or suggest a change? Keep it concise (<=120 words).`;
-
-              const { response: reaction, usage: reactionUsage } =
-                await this.aiService.generateAgentResponse(
-                  other.systemPrompt,
-                  `${reactionPrompt}\n\nUser message: ${userMessage}\nPrimary response: ${agentMessage.content}`,
-                  reactionHistory,
-                );
-
-              const reactionMessage = await this.messagesService.createAgentMessage(
-                conversation,
-                other.id,
-                reaction.content,
-                {
-                  reasoning: reaction.reasoning,
-                  confidence: reaction.confidence,
-                  suggestions: reaction.suggestions,
-                },
-              );
-
-              agentResponses.push(reactionMessage);
-              responded.add(other.id);
-
-              await this.analyticsService.updateTokens(
-                conversationId,
-                reactionUsage?.prompt_tokens || 0,
-                reactionUsage?.completion_tokens || 0,
-              );
-
-              await this.analyticsService.incrementAgentParticipation(
-                conversationId,
-                other.id,
-              );
-
-              this.boardGateway.emitAgentResponse(conversationId, reactionMessage);
-            } catch (reactionError) {
-              this.logger.error(`Error processing reaction from ${other.name}:`, reactionError);
-            }
-          }
-        }
-      } catch (error) {
-        this.logger.error(`Error processing ${persona.name} response:`, error);
+      const qaPersona = responderList.find((p) => p.id === 'qa');
+      if (qaPersona && responded.size > 0) {
+        await this.handlePersonaResponse(
+          conversation,
+          qaPersona,
+          userMessage,
+          conversationHistory,
+          conversationId,
+          agentResponses,
+          responded,
+          turnIndex,
+        );
+        turnIndex += 1;
       }
     }
 

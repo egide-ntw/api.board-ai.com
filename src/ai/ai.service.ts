@@ -49,7 +49,7 @@ export class AiService {
 
     try {
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4o',
+        model: 'gpt-4o-mini',
         messages,
         response_format: {
           type: 'json_schema',
@@ -82,8 +82,8 @@ export class AiService {
             },
           },
         },
-        temperature: 0.7,
-        max_tokens: 1000,
+        temperature: 0.6,
+        max_tokens: 400,
       });
 
       const responseContent = completion.choices[0].message.content;
@@ -106,7 +106,7 @@ export class AiService {
 
     try {
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4o',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -119,7 +119,7 @@ export class AiService {
           },
         ],
         temperature: 0.5,
-        max_tokens: 500,
+        max_tokens: 300,
       });
 
       return completion.choices[0].message.content || '';
