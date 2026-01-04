@@ -165,8 +165,34 @@ export class OrchestrationService {
           .map((id) => personas.find((p) => p.id === id))
           .filter((p): p is Persona => Boolean(p));
 
-        for (let i = 0; i < orderedPersonas.length; i += 1) {
-          const persona = orderedPersonas[i];
+        // Simple intent-based prioritization: if the user asks about testing/quality, let QA go first;
+        // if design/ux/ui is mentioned, let UX go first. Otherwise keep PM first.
+        const text = userMessage.toLowerCase();
+        const prefersQa = /(test|qa|quality|bug|regression|automation)/i.test(text);
+        const prefersUx = /(ux|ui|design|prototype|flow|usability)/i.test(text);
+
+        const prioritized: Persona[] = [];
+        const pushIfPresent = (id: string) => {
+          const found = orderedPersonas.find((p) => p.id === id);
+          if (found && !prioritized.includes(found)) prioritized.push(found);
+        };
+
+        if (prefersQa) {
+          pushIfPresent('qa');
+          pushIfPresent('pm');
+        } else if (prefersUx) {
+          pushIfPresent('ux');
+          pushIfPresent('pm');
+        } else {
+          pushIfPresent('pm');
+        }
+
+        orderedPersonas.forEach((p) => {
+          if (!prioritized.includes(p)) prioritized.push(p);
+        });
+
+        for (let i = 0; i < prioritized.length; i += 1) {
+          const persona = prioritized[i];
           await this.handlePersonaResponse(
             conversation,
             persona,
@@ -178,7 +204,7 @@ export class OrchestrationService {
             turnIndex,
           );
           turnIndex += 1;
-          if (i < orderedPersonas.length - 1) {
+          if (i < prioritized.length - 1) {
             await this.delay(800);
           }
         }
