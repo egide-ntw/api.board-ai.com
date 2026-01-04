@@ -18,27 +18,47 @@ interface PersonaMeta {
 const buildGuardrails = (persona?: PersonaMeta) => {
   const baseRole = persona?.id?.toLowerCase?.() || 'agent';
 
-  const globalTagRules = `Non-negotiable tag protocol: If you are NOT tagged, do NOT respond. Never tag yourself. Never reply with only an @tag; always include substantive content. Always begin by acknowledging the tag (e.g., "@PM"). Reply only to the tagger's ask. No orphan messages: every message must be (a) a response to a tag, (b) a PM directive, or (c) a direct user answer. If you have nothing new, say "No further additions" exactly once.`;
-
   const conflictRules = `Conflict rules: Disagreement is encouraged. Debate the idea, not the person. Be blunt and clear; do not soften criticism. Argue strictly from your role's incentives. If a point is weak, say it plainly and why. Assume the founder is a beginner: explain why something is strong or weak, avoid jargon without explanation, frame guidance as learning.`;
 
   const roleContracts: Record<string, string> = {
-    pm: 'You are the PM (sense-maker). Always tag exactly ONE role at a time. Never tag yourself. Never reply with only an @tag. Surface disagreements, translate conflict into clear options, and educate the founder on trade-offs. Do NOT force alignment; do NOT shut down debate prematurely.',
-    developer: 'You are the Developer (feasibility realist). Speak ONLY when tagged. Address ONLY the tagger. Separate easy-to-build from worth-building. Call out when an idea is technically trivial but strategically weak. Discuss opportunity cost and risks.',
-    ux: 'You are UX Research (problem reframer). Respond ONLY when tagged. Ask who/what pain/why. Suggest pivots or reframes instead of agreement. Focus on validation, flows, and concrete user risks.',
-    qa: 'You are QA (risk amplifier). Respond ONLY when tagged. Surface quality, maintenance, and scaling risks. Question whether the idea is worth maintaining. If no major risk exists, say so.',
-    marketing: 'You are Marketing (idea killer). Respond ONLY when tagged. Be skeptical by default. Question market size, demand, and differentiation. Say when the idea has little or no market. Do not assume every idea can be marketed.',
+    pm: 'You are the PM (sense-maker). Never answer domain questions first unless the intent is greeting or budget. After the primary expert responds, summarize the tension, translate trade-offs for a beginner founder, and present 2–3 clear options. Invite opposing viewpoints; do not force alignment.',
+    developer: 'You are the Developer (feasibility realist). Separate easy-to-build from worth-building. Call out when something is trivial but strategically weak. Focus on feasibility, effort, tech choices, and opportunity cost.',
+    ux: 'You are UX Research (problem reframer). Ask who/what pain/why. Reframe weak ideas into problem-led opportunities. Focus on validation, flows, and concrete user risks.',
+    qa: 'You are QA (risk amplifier). Surface quality, maintenance, and scaling risks. Question whether the idea is worth maintaining long-term. If no major risk exists, say so briefly.',
+    marketing: 'You are Marketing (idea killer). Be skeptical by default. Challenge market size, demand, and differentiation. Say when the idea has little or no market. Do not assume every idea can be marketed.',
   };
 
   const laneRule = roleContracts[baseRole] || `You are ${persona?.name || baseRole}. Stay strictly in your lane.`;
 
   return [
     `You are ${persona?.name || baseRole} (${baseRole}).`,
-    globalTagRules,
     conflictRules,
     laneRule,
-    'If the user message is only a greeting with no request, give a brief acknowledgment; do not restate specs/scope/budget. PM may ask one clarifying question; others should not volunteer scope/specs. Do not repeat points made in the last 6 messages; add net-new insight or decisions. If your response would overlap with any of the last 3 agent messages (similar topic or wording), reply only with "No further additions".',
+    'If the user message is only a greeting with no request, give a brief acknowledgment; do not restate specs/scope/budget. Keep answers concise; avoid repetition of prior agent points.',
   ].join('\n');
+};
+
+type Intent = 'greeting' | 'market' | 'feasibility' | 'ux' | 'risk' | 'budget' | 'general';
+
+const classifyIntent = (text: string): Intent => {
+  const t = text.toLowerCase();
+  if (/\b(hi|hello|hey|greetings)\b/.test(t)) return 'greeting';
+  if (/(market|marketing|growth|4p|4ps|go to market|demand|traction|audience|pricing|positioning)/.test(t)) return 'market';
+  if (/(feasible|feasibility|technical|tech|stack|api|build|implementation|performance|scal)/.test(t)) return 'feasibility';
+  if (/(ux|ui|design|prototype|wireframe|flow|usability|user experience)/.test(t)) return 'ux';
+  if (/(risk|qa|test|testing|bug|quality|regression|failure)/.test(t)) return 'risk';
+  if (/(budget|cost|price|dollars|usd|spend|afford)/.test(t)) return 'budget';
+  return 'general';
+};
+
+const intentToPersona: Record<Intent, string> = {
+  greeting: 'pm',
+  market: 'marketing',
+  feasibility: 'developer',
+  ux: 'ux',
+  risk: 'qa',
+  budget: 'pm',
+  general: 'marketing',
 };
 
 @Injectable()
@@ -63,9 +83,22 @@ export class AiService {
     userMessage: string,
     conversationHistory: Array<{ role: string; content: string }>,
     persona?: PersonaMeta,
-  ): Promise<{ response: AgentResponse; usage: any }> {
+  ): Promise<{ response: AgentResponse; usage: any } | null> {
     if (!this.openai) {
       throw new Error('OpenAI is not configured');
+    }
+
+    // Routing: determine primary persona from intent
+    const intent = await this.classifyIntentSmart(userMessage || '');
+    const primaryPersonaId = intentToPersona[intent];
+    const personaId = persona?.id?.toLowerCase?.();
+
+    const isPrimary = personaId === primaryPersonaId;
+    const isPmFollowup = personaId === 'pm' && primaryPersonaId !== 'pm';
+
+    // Enforce silence: if not primary and not PM follow-up, do not respond
+    if (!isPrimary && !isPmFollowup) {
+      return null;
     }
 
     const personaGuardrails = buildGuardrails(persona);
@@ -95,23 +128,10 @@ export class AiService {
             schema: {
               type: 'object',
               properties: {
-                content: {
-                  type: 'string',
-                  description: 'The main response content from the agent',
-                },
-                reasoning: {
-                  type: 'string',
-                  description: 'The reasoning behind the agents perspective',
-                },
-                confidence: {
-                  type: 'number',
-                  description: 'Confidence level from 0 to 1',
-                },
-                suggestions: {
-                  type: 'array',
-                  items: { type: 'string' },
-                  description: 'Optional actionable suggestions',
-                },
+                content: { type: 'string' },
+                reasoning: { type: 'string' },
+                confidence: { type: 'number' },
+                suggestions: { type: 'array', items: { type: 'string' } },
               },
               required: ['content', 'reasoning', 'confidence', 'suggestions'],
               additionalProperties: false,
@@ -133,6 +153,57 @@ export class AiService {
       this.logger.error('Error generating agent response:', error);
       throw error;
     }
+  }
+
+  private async classifyIntentSmart(text: string): Promise<Intent> {
+    const heuristic = classifyIntent(text);
+    // If OpenAI is not available, or text is very short, return heuristic
+    if (!this.openai || (text || '').trim().length < 3) {
+      return heuristic;
+    }
+
+    try {
+      const completion = await this.openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        temperature: 0.2,
+        max_tokens: 32,
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'intent_classification',
+            strict: true,
+            schema: {
+              type: 'object',
+              properties: {
+                intent: {
+                  type: 'string',
+                  enum: ['greeting', 'market', 'feasibility', 'ux', 'risk', 'budget', 'general'],
+                },
+              },
+              required: ['intent'],
+              additionalProperties: false,
+            },
+          },
+        },
+        messages: [
+          {
+            role: 'system',
+            content:
+              'Classify the user message intent for routing to a single advisor. Use one of: greeting, market, feasibility, ux, risk, budget, general. Keep it strict.',
+          },
+          { role: 'user', content: text },
+        ],
+      });
+
+      const raw = completion.choices[0].message.content;
+      const parsed = raw ? (JSON.parse(raw) as { intent?: Intent }) : null;
+      if (parsed?.intent && intentToPersona[parsed.intent]) {
+        return parsed.intent;
+      }
+    } catch (error) {
+      this.logger.warn(`Intent classification fallback to heuristic: ${String(error)}`);
+    }
+    return heuristic;
   }
 
   async generateSummary(messages: string[]): Promise<string> {

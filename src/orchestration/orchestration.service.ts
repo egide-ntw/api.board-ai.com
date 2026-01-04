@@ -38,12 +38,20 @@ export class OrchestrationService {
 
       await this.delayRange(1500, 3000);
 
-      const { response, usage } = await this.aiService.generateAgentResponse(
+      const result = await this.aiService.generateAgentResponse(
         persona.systemPrompt,
         userMessage,
         conversationHistory,
         { id: persona.id, name: persona.name, role: persona.description },
       );
+
+      // Silence: non-routed personas return null; skip processing
+      if (!result) {
+        this.boardGateway.emitAgentTypingStop(conversationId, persona.id, persona.name);
+        return;
+      }
+
+      const { response, usage } = result;
 
       const agentMessage = await this.messagesService.createAgentMessage(
         conversation,
@@ -114,19 +122,53 @@ export class OrchestrationService {
       content: msg.content,
     }));
 
-    // If user tags personas (e.g., @pm @developer), restrict responders to those personas only
+    const pmPersona = personas.find((p) => p.id === 'pm') || null;
     const taggedPersonas = this.extractTaggedPersonas(personas, userMessage);
-    const taggingMode = taggedPersonas.length > 0;
+    const primaryFromTag = taggedPersonas.length > 0 ? taggedPersonas[0] : null;
 
-    // Greeting gatekeeper: if only greeting, only PM replies
-    const isGreeting = /^\s*(hi|hello|hey)\b/i.test(userMessage.trim());
-    const pmPersona = personas.find((p) => p.id === 'pm');
+    // Primary selection: tag override -> AI router -> heuristic fallback
+    let primaryPersona: Persona | null = primaryFromTag;
+
+    if (!primaryPersona) {
+      primaryPersona = await this.choosePersonaByPrompt(personas, userMessage);
+    }
+
+    if (!primaryPersona) {
+      const intent = this.classifyIntentLocal(userMessage || '');
+      const intentMap: Record<string, string> = {
+        greeting: 'pm',
+        market: 'marketing',
+        feasibility: 'developer',
+        ux: 'ux',
+        risk: 'qa',
+        budget: 'pm',
+        general: 'marketing',
+      };
+
+      const primaryId = intentMap[intent];
+      primaryPersona = personas.find((p) => p.id === primaryId) || pmPersona || personas[0];
+    }
 
     let turnIndex = conversation.turnIndex || 0;
     const responded = new Set<string>();
 
-    // Greeting gate: only PM responds
-    if (isGreeting && pmPersona) {
+    // Primary responds
+    if (primaryPersona) {
+      await this.handlePersonaResponse(
+        conversation,
+        primaryPersona,
+        userMessage,
+        conversationHistory,
+        conversationId,
+        agentResponses,
+        responded,
+        turnIndex,
+      );
+      turnIndex += 1;
+    }
+
+    // PM follow-up only if not already primary
+    if (pmPersona && primaryPersona && pmPersona.id !== primaryPersona.id) {
       await this.handlePersonaResponse(
         conversation,
         pmPersona,
@@ -138,77 +180,6 @@ export class OrchestrationService {
         turnIndex,
       );
       turnIndex += 1;
-    } else {
-      // Tagged mode: only tagged personas respond, in order of appearance
-      if (taggingMode) {
-        for (let i = 0; i < taggedPersonas.length; i += 1) {
-          const persona = taggedPersonas[i];
-          await this.handlePersonaResponse(
-            conversation,
-            persona,
-            userMessage,
-            conversationHistory,
-            conversationId,
-            agentResponses,
-            responded,
-            turnIndex,
-          );
-          turnIndex += 1;
-          if (i < taggedPersonas.length - 1) {
-            await this.delay(800);
-          }
-        }
-      } else {
-        // No tags: PM orchestrates first, then others in a fixed order
-        const orderedIds = ['pm', 'developer', 'ux', 'qa', 'marketing'];
-        const orderedPersonas = orderedIds
-          .map((id) => personas.find((p) => p.id === id))
-          .filter((p): p is Persona => Boolean(p));
-
-        // Simple intent-based prioritization: if the user asks about testing/quality, let QA go first;
-        // if design/ux/ui is mentioned, let UX go first. Otherwise keep PM first.
-        const text = userMessage.toLowerCase();
-        const prefersQa = /(test|qa|quality|bug|regression|automation)/i.test(text);
-        const prefersUx = /(ux|ui|design|prototype|flow|usability)/i.test(text);
-
-        const prioritized: Persona[] = [];
-        const pushIfPresent = (id: string) => {
-          const found = orderedPersonas.find((p) => p.id === id);
-          if (found && !prioritized.includes(found)) prioritized.push(found);
-        };
-
-        if (prefersQa) {
-          pushIfPresent('qa');
-          pushIfPresent('pm');
-        } else if (prefersUx) {
-          pushIfPresent('ux');
-          pushIfPresent('pm');
-        } else {
-          pushIfPresent('pm');
-        }
-
-        orderedPersonas.forEach((p) => {
-          if (!prioritized.includes(p)) prioritized.push(p);
-        });
-
-        for (let i = 0; i < prioritized.length; i += 1) {
-          const persona = prioritized[i];
-          await this.handlePersonaResponse(
-            conversation,
-            persona,
-            userMessage,
-            conversationHistory,
-            conversationId,
-            agentResponses,
-            responded,
-            turnIndex,
-          );
-          turnIndex += 1;
-          if (i < prioritized.length - 1) {
-            await this.delay(800);
-          }
-        }
-      }
     }
 
     // Increment round
@@ -477,11 +448,17 @@ export class OrchestrationService {
       'You are a routing agent. Given a user message and a list of personas, pick the single best persona to answer. Strongly prefer a Product Manager/PM persona for planning, coordination, requirements, or when the user mentions PM/product. Only choose Developer when the ask is clearly code/architecture/testing; choose Designer only for UX/UI/visual asks. Respond with ONLY a JSON object like {"personaId":"<id>"}.';
 
     try {
-      const { response } = await this.aiService.generateAgentResponse(
+      const result = await this.aiService.generateAgentResponse(
         selectionPrompt,
         `User message: ${userMessage}\n\nPersonas:\n${roster}\n\nReturn JSON with personaId.`,
         [],
       );
+
+      if (!result) {
+        return null;
+      }
+
+      const { response } = result;
 
       const content = response.content || '';
       const parsed = JSON.parse(content.trim());
@@ -506,5 +483,18 @@ export class OrchestrationService {
       const idName = `${p.id} ${p.name}`.toLowerCase();
       return tags.some((t) => idName.includes(t));
     });
+  }
+
+  // Lightweight local intent classifier to mirror AiService mapping
+  private classifyIntentLocal(message: string): string {
+    const text = message.toLowerCase();
+
+    if (/\b(hi|hello|hey)\b/.test(text)) return 'greeting';
+    if (/market|positioning|launch|growth|segment/.test(text)) return 'market';
+    if (/build|feasible|architecture|scal(ing|able)|perf(ormance)?/.test(text)) return 'feasibility';
+    if (/ux|ui|design|flow|usability|prototype/.test(text)) return 'ux';
+    if (/risk|qa|test|bug|regression|quality/.test(text)) return 'risk';
+    if (/budget|cost|pricing/.test(text)) return 'budget';
+    return 'general';
   }
 }
