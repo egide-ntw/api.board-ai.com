@@ -8,9 +8,27 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { useContainer } from 'class-validator';
+import { Blob, File, FormData } from 'undici';
 import { AppModule } from './app.module';
 import validationOptions from './utils/validation-options';
 import { AllConfigType } from './config/config.type';
+
+// Polyfill missing Web File APIs in Node 18 runtimes (e.g., Railway default) used by undici
+const globalWebApi = globalThis as typeof globalThis & {
+  File?: typeof File;
+  Blob?: typeof Blob;
+  FormData?: typeof FormData;
+};
+
+if (!globalWebApi.File) {
+  globalWebApi.File = File;
+}
+if (!globalWebApi.Blob) {
+  globalWebApi.Blob = Blob;
+}
+if (!globalWebApi.FormData) {
+  globalWebApi.FormData = FormData;
+}
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { cors: true });
