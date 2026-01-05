@@ -8,26 +8,28 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { useContainer } from 'class-validator';
-import { Blob, File, FormData } from 'undici';
+// Use require to avoid TS type mismatch between undici types and DOM lib
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { Blob: UndiciBlob, File: UndiciFile, FormData: UndiciFormData } = require('undici');
 import { AppModule } from './app.module';
 import validationOptions from './utils/validation-options';
 import { AllConfigType } from './config/config.type';
 
 // Polyfill missing Web File APIs in Node 18 runtimes (e.g., Railway default) used by undici
 const globalWebApi = globalThis as typeof globalThis & {
-  File?: typeof File;
-  Blob?: typeof Blob;
-  FormData?: typeof FormData;
+  File?: typeof globalThis.File;
+  Blob?: typeof globalThis.Blob;
+  FormData?: typeof globalThis.FormData;
 };
 
 if (!globalWebApi.File) {
-  globalWebApi.File = File;
+  globalWebApi.File = UndiciFile as typeof globalThis.File;
 }
 if (!globalWebApi.Blob) {
-  globalWebApi.Blob = Blob;
+  globalWebApi.Blob = UndiciBlob as typeof globalThis.Blob;
 }
 if (!globalWebApi.FormData) {
-  globalWebApi.FormData = FormData;
+  globalWebApi.FormData = UndiciFormData as typeof globalThis.FormData;
 }
 
 async function bootstrap() {
