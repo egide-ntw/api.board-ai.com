@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { AiService } from '../ai/ai.service';
 import { PersonasService } from '../personas/personas.service';
 import { MessagesService } from '../messages/messages.service';
@@ -68,7 +68,7 @@ export class OrchestrationService {
       responded.add(persona.id);
 
       const messagePayload = {
-        id: agentMessage.id || uuidv4(),
+        id: agentMessage.id || randomUUID(),
         conversationId,
         agentId: persona.id,
         agentName: persona.name,
