@@ -1,241 +1,72 @@
+# Board AI API
 
-# NestJS API Boilerplate
+Board AI powers multi-agent debates between specialized personas. The API handles authentication, conversation orchestration, WebSocket streaming, analytics, and file handling for the debate system.
 
-## Description
+## What this service does
 
-A production-ready NestJS API boilerplate with authentication, database management, mailing, and Redis caching. This boilerplate provides a solid foundation for building scalable REST APIs with best practices built-in.
+- Manage users, sessions, and roles (user and admin)
+- Create conversations and orchestrate multi-round debates between AI personas
+- Stream persona responses over WebSockets (Socket.IO) on the `/board` namespace
+- Track token usage and session analytics
+- Handle attachments and uploads (local or S3)
+- Support social logins (Apple, Facebook, Google, Twitter) and email/password
 
-[Full documentation here](docs/readme.md)
+## Tech stack
 
-  
+- NestJS 9, TypeScript, TypeORM, Postgres
+- Redis for caching and queues
+- Socket.IO for real-time messaging
+- Swagger docs at `/docs`
 
-## Table of Contents
+## Getting started locally
 
-  
+1) Prereqs: Node 18+, pnpm, Docker (for Postgres/Redis/maildev).
+2) Copy env file: `cp .env.example .env` and fill secrets (JWT keys, DB, mail, S3 if used).
+3) Start services: `docker compose up -d postgres adminer maildev`.
+4) Install deps: `pnpm install`.
+5) Run migrations and seeds as needed:
+	- `pnpm run migration:run`
+	- `pnpm run seed:run` (optional sample data)
+6) Start API: `pnpm run start:dev` (http://localhost:3000).
 
-- [Features](#features)
-
-- [Quick run](#quick-run)
-
-- [Comfortable development](#comfortable-development)
-
-- [Links](#links)
-
-- [Automatic update of dependencies](#automatic-update-of-dependencies)
-
-- [Database utils](#database-utils)
-
-- [Tests](#tests)
-
-  
-
-## Features
-
-  
-
-- [x] Database ([typeorm](https://www.npmjs.com/package/typeorm)).
-
-- [x] Seeding.
-
-- [x] Config Service ([@nestjs/config](https://www.npmjs.com/package/@nestjs/config)).
-
-- [x] Mailing ([nodemailer](https://www.npmjs.com/package/nodemailer), [@nestjs-modules/mailer](https://www.npmjs.com/package/@nestjs-modules/mailer)).
-
-- [x] Sign in and sign up via email.
-
-- [x] Social sign in (Apple, Facebook, Google, Twitter).
-
-- [x] Admin and User roles.
-
-- [x] I18N ([nestjs-i18n](https://www.npmjs.com/package/nestjs-i18n)).
-
-- [x] File uploads. Support local and Amazon S3 drivers.
-
-- [x] Swagger.
-
-- [x] E2E and units tests.
-
-- [x] Docker.
-
-- [x] CI (Github Actions).
-
-  
-
-## Quick run
+## Running with Docker only
 
 ```bash
-git clone --depth 1 <your-repo-url> my-api
-cd my-api/
-cp env-example .env
+cp .env.example .env
 docker compose up -d
 ```
 
-For check status run
+## Key endpoints
 
-```bash
-docker compose logs
-```
+- REST base path is `/api`. Versioned routes use `/v1`.
+- Swagger UI: http://localhost:3000/docs (includes bearer auth and try-it-out).
+- WebSockets: connect to `ws://localhost:3000/board`.
 
-## Comfortable development
+## Common tasks
 
-```bash
-git clone --depth 1 <your-repo-url> my-api
-cd my-api/
-cp env-example .env
-```
+- Generate migration: `pnpm run migration:generate -- src/database/migrations/CreateNameTable`
+- Run migration: `pnpm run migration:run`
+- Revert migration: `pnpm run migration:revert`
+- Drop schema: `pnpm run schema:drop`
+- Seeds: `pnpm run seed:run`
+- Tests: `pnpm run test` and `pnpm run test:e2e`
 
-  
+## Deploying to Railway (quick checklist)
 
-Change `DATABASE_HOST=postgres` to `DATABASE_HOST=localhost`
+- Set Node to 18.18+ or 20 in Railway settings.
+- Provide env vars from `.env.example` (DB, Redis, JWT, mail, S3 if used).
+- Build command: `pnpm install --frozen-lockfile && pnpm run build`.
+- Start command: `pnpm run start:prod` (runs `node dist/src/main`).
 
-  
+## Project structure (API)
 
-Change `MAIL_HOST=maildev` to `MAIL_HOST=localhost`
+- `src/app.module.ts` entry point
+- `src/conversations`, `src/orchestration`: debate flow
+- `src/personas`: persona definitions
+- `src/messages`, `src/analytics`, `src/attachments`
+- `src/auth*`: JWT and social auth strategies
+- `src/config`: typed config and validation
 
-  
+## Support
 
-Run additional container:
-
-  
-
-```bash
-
-docker  compose  up  -d  postgres  adminer  maildev
-
-```
-
-  
-
-```bash
-
-npm  install
-
-  
-
-npm  run  migration:run
-
-  
-
-npm  run  seed:run
-
-  
-
-npm  run  start:dev
-
-```
-
-  
-
-## Links
-
-  
-
-- Swagger: http://localhost:3000/docs
-
-- Adminer (client for DB): http://localhost:8080
-
-- Maildev: http://localhost:1080
-
-  
-
-## Automatic update of dependencies
-
-  
-
-If you want to automatically update dependencies, you can connect [Renovate](https://github.com/marketplace/renovate) for your project.
-
-  
-
-## Database utils
-
-  
-
-Generate migration
-
-  
-
-```bash
-
-npm  run  migration:generate  --  src/database/migrations/CreateNameTable
-
-```
-
-  
-
-Run migration
-
-  
-
-```bash
-
-npm  run  migration:run
-
-```
-
-  
-
-Revert migration
-
-  
-
-```bash
-
-npm  run  migration:revert
-
-```
-
-  
-
-Drop all tables in database
-
-  
-
-```bash
-
-npm  run  schema:drop
-
-```
-
-  
-
-Run seed
-
-  
-
-```bash
-
-npm  run  seed:run
-
-```
-
-  
-
-## Tests
-
-  
-
-```bash
-
-# unit tests
-
-npm  run  test
-
-  
-
-# e2e tests
-
-npm  run  test:e2e
-
-```
-
-  
-
-## Tests in Docker
-
-  
-
-```bash
-
-docker  compose  -f  docker-compose.ci.yaml  --env-file  env-example  -p  ci  up  --build  --exit-code-from  api  &&  docker  compose  -p  ci  rm  -svf
-
-```
+Open an issue with steps to reproduce, expected vs actual behavior, and logs if available. For production incidents, include request IDs and timestamps when possible.
