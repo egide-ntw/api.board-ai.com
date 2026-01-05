@@ -6,19 +6,12 @@ import authConfig from './config/auth.config';
 import appConfig from './config/app.config';
 import mailConfig from './config/mail.config';
 import fileConfig from './config/file.config';
-import facebookConfig from './config/facebook.config';
 import googleConfig from './config/google.config';
-import twitterConfig from './config/twitter.config';
-import appleConfig from './config/apple.config';
-import linkedinConfig from './config/linkedin.config';
 import * as path from 'path';
 import { MailerModule } from '@nestjs-modules/mailer';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { AuthAppleModule } from './auth-apple/auth-apple.module';
-import { AuthFacebookModule } from './auth-facebook/auth-facebook.module';
 import { AuthGoogleModule } from './auth-google/auth-google.module';
-import { AuthTwitterModule } from './auth-twitter/auth-twitter.module';
 import { TypeOrmConfigService } from './database/typeorm-config.service';
 import { MailConfigService } from './mail/mail-config.service';
 import { ForgotModule } from './forgot/forgot.module';
@@ -28,7 +21,6 @@ import { DataSource, DataSourceOptions } from 'typeorm';
 import { AllConfigType } from './config/config.type';
 import { ScheduleModule } from '@nestjs/schedule';
 import { RedisCachingModule } from './redis-caching/redis-caching.module';
-import { AuthLinkedinModule } from './auth-linkedin/auth-linkedin.module';
 import { ConversationsModule } from './conversations/conversations.module';
 import { MessagesModule } from './messages/messages.module';
 import { AttachmentsModule } from './attachments/attachments.module';
@@ -48,11 +40,7 @@ import { OrchestrationModule } from './orchestration/orchestration.module';
         appConfig,
         mailConfig,
         fileConfig,
-        facebookConfig,
         googleConfig,
-        twitterConfig,
-        appleConfig,
-        linkedinConfig,
       ],
       envFilePath: ['.env'],
     }),
@@ -69,11 +57,7 @@ import { OrchestrationModule } from './orchestration/orchestration.module';
     UsersModule,
     // FilesModule,
     AuthModule,
-    AuthFacebookModule,
     AuthGoogleModule,
-    AuthTwitterModule,
-    AuthAppleModule,
-    AuthLinkedinModule,
     ForgotModule,
     MailModule,
     HomeModule,

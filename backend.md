@@ -284,9 +284,10 @@ Redis is optional. If `REDIS_URL` is set, it can be used for caching/locks in fu
 - [x] REST controllers for conversations, messages, personas, attachments
 - [x] File upload via Multer (single file)
 - [x] Swagger docs and API versioning
-- [ ] Enforce auth/guards on routes
-- [ ] Real-time streaming events over Socket.IO
-- [ ] Analytics/consensus endpoints
-- [ ] Redis-backed orchestration/caching
+- [x] Socket.IO namespace mounted on `/board` (no streaming payloads yet)
+- [ ] Enforce auth/guards on routes (JWT scaffolding exists)
+- [ ] Real-time streaming events over Socket.IO (no event schema implemented)
+- [ ] Analytics/consensus endpoints (not implemented)
+- [ ] Redis-backed orchestration/caching (env-gated, unused)
 - [ ] RAG/vector search pipeline
-- [ ] Broader test coverage and CI
+- [ ] Broader test coverage and CI (only skeleton tests)

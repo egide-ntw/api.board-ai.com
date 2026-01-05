@@ -10,10 +10,6 @@ export type AppConfig = {
   headerLanguage: string;
 };
 
-export type AppleConfig = {
-  appAudience: string[];
-};
-
 export type AuthConfig = {
   secret?: string;
   expires?: string;
@@ -34,11 +30,6 @@ export type DatabaseConfig = {
   ca?: string;
   key?: string;
   cert?: string;
-};
-
-export type FacebookConfig = {
-  appId?: string;
-  appSecret?: string;
 };
 
 export type FileConfig = {
@@ -68,27 +59,11 @@ export type MailConfig = {
   requireTLS: boolean;
 };
 
-export type TwitterConfig = {
-  consumerKey?: string;
-  consumerSecret?: string;
-};
-
-// Configuration type definition
-export interface LinkedInConfig {
-  clientId?: string;
-  clientSecret?: string;
-  callBackUrl?: string;
-}
-
 export type AllConfigType = {
   app: AppConfig;
-  apple: AppleConfig;
   auth: AuthConfig;
   database: DatabaseConfig;
-  facebook: FacebookConfig;
   file: FileConfig;
   google: GoogleConfig;
   mail: MailConfig;
-  twitter: TwitterConfig;
-  linkedIn: LinkedInConfig;
 };

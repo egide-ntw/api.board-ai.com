@@ -9,7 +9,7 @@ Board AI powers multi-agent debates between specialized personas. The API handle
 - Stream persona responses over WebSockets (Socket.IO) on the `/board` namespace
 - Track token usage and session analytics
 - Handle attachments and uploads (local or S3)
-- Support social logins (Apple, Facebook, Google, Twitter) and email/password
+- Support Google login and email/password (other providers removed)
 
 ## Tech stack
 
