@@ -1,24 +1,18 @@
 # Board: Backend Architecture & Engineering Blueprint
 
-This document defines the server-side infrastructure for the Board autonomous multi-agent system, focusing on high-performance AI orchestration, state persistence, and distributed processing to serve the React/Next.js frontend.
+This is the backend that powers Board AI. It is a NestJS service that exposes REST and WebSocket endpoints for multi‑persona debates, conversations, messages, and attachments. The current codebase uses TypeORM with PostgreSQL, Socket.IO for real-time events, and simple, typed DTOs for request validation.
 
 ---
 
 ## 1. High-Level Backend Stack
 
-**Runtime**: NestJS (Node.js) – Selected for its modular architecture and native support for Microservices/WebSockets.
-
-**Orchestration**: LangGraph (JS/TS) – Manages the cyclical state machine of agent debates.
-
-**Persistence Layer**: PostgreSQL (Prisma ORM) – Stores users, conversations, messages, and session metadata.
-
-**Caching & State**: Redis 7.x – Centralized "hot" storage for active session states, distributed locking, and LLM response caching.
-
-**AI Engine**: GPT-4o (via OpenAI SDK) with Structured Output enforcement.
-
-**Vector Search**: Pinecone – For Retrieval-Augmented Generation (RAG) over attached documents.
-
-**File Storage**: AWS S3 / Azure Blob Storage – For uploaded file persistence with CDN support.
+- Runtime: NestJS (Node.js) with versioned REST routes and Swagger docs
+- Persistence: PostgreSQL via TypeORM entities and migrations
+- Caching: Redis module is available for caching/locks (feature-gated by env)
+- Real-time: Socket.IO adapter on the `/board` namespace
+- File handling: Multer + local/S3 driver wiring in `file.config`
+- Auth: JWT scaffolding exists; most public endpoints are currently open while auth wiring is finished
+- AI/Orchestration: AI and orchestration modules are present and evolve as we iterate; core CRUD (personas, conversations, messages, attachments) is live today
 
 ---
 
@@ -743,7 +737,7 @@ const { attachments } = await response.json();
 
 ### Phase 1: Core Infrastructure
 - [ ] Set up NestJS project with modular architecture
-- [ ] Configure Prisma ORM with PostgreSQL schema
+- [ ] Configure TypeORM with PostgreSQL schema
 - [ ] Implement RedisModule for distributed locking
 - [ ] Set up JWT authentication with refresh tokens
 - [ ] Configure CORS and security middleware
