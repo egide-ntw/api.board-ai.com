@@ -16,15 +16,13 @@ This is the backend that powers Board AI. It is a NestJS service that exposes RE
 
 ---
 
-## 2. Database Schema (PostgreSQL)
-
-### 2.1 Core Tables
+## 2. Database schema 
 
 ```sql
--- Users table for authentication
+-- Users (optional; conversations can be anonymous)
 CREATE TABLE users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  email VARCHAR(255) UNIQUE NOT NULL,
+  email VARCHAR(255) UNIQUE,
   name VARCHAR(255),
   avatar_url TEXT,
   password_hash VARCHAR(255),
@@ -32,100 +30,57 @@ CREATE TABLE users (
   updated_at TIMESTAMP DEFAULT NOW()
 );
 
--- Conversations (Boardroom sessions)
+-- Conversations
 CREATE TABLE conversations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-  title VARCHAR(255) NOT NULL DEFAULT 'New brainstorming',
+  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  title VARCHAR(255),
+  context TEXT,
+  status VARCHAR(20) DEFAULT 'active',
+  max_rounds INT DEFAULT 3,
+  current_round INT DEFAULT 0,
+  active_personas JSONB,
+  current_speaker VARCHAR(255),
+  turn_index INT DEFAULT 0,
+  metadata JSONB,
   created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW(),
-  
-  -- Metadata
-  status VARCHAR(50) DEFAULT 'active', -- active, archived, deleted
-  consensus_reached BOOLEAN DEFAULT false,
-  viability_score DECIMAL(5,2),
-  
-  -- Performance metrics
-  total_turns INTEGER DEFAULT 0,
-  active_agents TEXT[], -- Array of active persona IDs
-  
-  INDEX idx_user_conversations (user_id, updated_at DESC)
+  updated_at TIMESTAMP DEFAULT NOW()
 );
 
--- Messages in conversations
+-- Messages
 CREATE TABLE messages (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   conversation_id UUID REFERENCES conversations(id) ON DELETE CASCADE,
-  persona_id VARCHAR(50) NOT NULL, -- 'user', 'marketing', 'developer', etc.
+  role VARCHAR(20) NOT NULL,            -- user | agent | system
+  agent_type VARCHAR(50),               -- marketing | developer | ...
   content TEXT NOT NULL,
-  created_at TIMESTAMP DEFAULT NOW(),
-  
-  -- Message metadata
-  is_typing BOOLEAN DEFAULT false,
-  is_rebuttal BOOLEAN DEFAULT false,
-  is_resolution BOOLEAN DEFAULT false,
-  sentiment_score DECIMAL(3,2), -- 0.0 to 1.0
-  
-  -- AI metadata
-  model_used VARCHAR(100),
-  tokens_used INTEGER,
-  latency_ms INTEGER,
-  
-  INDEX idx_conversation_messages (conversation_id, created_at ASC)
+  round_number INT DEFAULT 0,
+  structured_output JSONB,
+  metadata JSONB,
+  created_at TIMESTAMP DEFAULT NOW()
 );
 
--- File attachments
+-- Attachments
 CREATE TABLE attachments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   message_id UUID REFERENCES messages(id) ON DELETE CASCADE,
   file_name VARCHAR(255) NOT NULL,
   file_type VARCHAR(100) NOT NULL,
   file_size INTEGER NOT NULL,
-  storage_url TEXT NOT NULL, -- S3/Azure URL
-  
-  -- Vector search integration
-  vector_indexed BOOLEAN DEFAULT false,
-  pinecone_namespace VARCHAR(255),
-  
-  created_at TIMESTAMP DEFAULT NOW(),
-  
-  INDEX idx_message_attachments (message_id)
+  storage_url TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW()
 );
 
--- Agent personas configuration
+-- Personas
 CREATE TABLE personas (
-  id VARCHAR(50) PRIMARY KEY, -- 'marketing', 'developer', etc.
+  id VARCHAR(50) PRIMARY KEY,
   name VARCHAR(100) NOT NULL,
   role VARCHAR(100) NOT NULL,
-  avatar_text VARCHAR(5) NOT NULL, -- 'M', 'D', etc.
-  color_hex VARCHAR(7) NOT NULL, -- '#10B981'
+  avatar_text VARCHAR(5) NOT NULL,
+  color_hex VARCHAR(7) NOT NULL,
   system_prompt TEXT NOT NULL,
   enabled BOOLEAN DEFAULT true,
   priority_order INTEGER DEFAULT 0,
-  
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
-
--- Session analytics and metrics
-CREATE TABLE session_analytics (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  conversation_id UUID REFERENCES conversations(id) ON DELETE CASCADE,
-  
-  -- Consensus metrics
-  agreement_score DECIMAL(5,2),
-  conflict_count INTEGER DEFAULT 0,
-  resolution_count INTEGER DEFAULT 0,
-  
-  -- Performance metrics
-  total_tokens_used INTEGER DEFAULT 0,
-  total_cost_usd DECIMAL(10,4) DEFAULT 0,
-  avg_response_time_ms INTEGER,
-  
-  -- Outcome tracking
-  final_recommendation TEXT,
-  key_insights JSONB, -- Structured insights from the debate
-  
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -133,19 +88,9 @@ CREATE TABLE session_analytics (
 
 ---
 
-## 3. REST API Endpoints
+## 3. REST API endpoints (current controllers)
 
-### 3.1 Authentication & User Management
-
-```typescript
-POST   /api/auth/register          // Create new user account
-POST   /api/auth/login             // Authenticate user (returns JWT)
-POST   /api/auth/logout            // Invalidate session
-GET    /api/auth/me                // Get current user profile
-PATCH  /api/auth/me                // Update user profile
-```
-
-### 3.2 Conversation Management
+### Conversations
 
 ```typescript
 GET    /api/conversations                    // List all user conversations (paginated)
@@ -185,7 +130,7 @@ DELETE /api/conversations/:id                // Delete conversation
 }
 ```
 
-### 3.3 Message Management
+### Messages
 
 ```typescript
 GET    /api/conversations/:id/messages       // Get all messages in conversation
@@ -224,7 +169,7 @@ DELETE /api/messages/:id                     // Delete message (admin only)
 }
 ```
 
-### 3.4 File Upload & Attachments
+### Attachments
 
 ```typescript
 POST   /api/conversations/:id/upload         // Upload file to conversation
@@ -260,7 +205,7 @@ FormData: {
 }
 ```
 
-### 3.5 Persona Management
+### Personas
 
 ```typescript
 GET    /api/personas                         // List all available personas
@@ -288,491 +233,60 @@ DELETE /api/personas/:id                     // Delete custom persona
 }
 ```
 
-### 3.6 Analytics & Insights
-
-```typescript
-GET    /api/conversations/:id/analytics      // Get conversation metrics
-GET    /api/conversations/:id/consensus      // Get current consensus status
-GET    /api/analytics/user                   // User-level usage statistics
-```
-
-**Analytics Response**:
-```json
-{
-  "success": true,
-  "data": {
-    "agreementScore": 0.78,
-    "totalTurns": 12,
-    "tokensUsed": 15420,
-    "estimatedCost": 0.15,
-    "consensusReached": false,
-    "viabilityScore": 8.2,
-    "conflictCount": 2,
-    "resolutionCount": 1,
-    "keyInsights": [
-      "Market validation required",
-      "Technical feasibility confirmed",
-      "Resource allocation concerns"
-    ]
-  }
-}
-```
+### (Not wired yet)
+- Auth routes exist but are not enforced for the above resources.
+- Analytics/consensus endpoints are not implemented in the current code.
 
 ---
 
-## 4. WebSocket Events (Socket.IO)
+## 4. WebSockets (current state)
 
-### 4.1 Connection & Namespaces
-
-```typescript
-// Client connects to specific conversation
-const socket = io('/conversations/:conversationId', {
-  auth: { token: 'JWT_TOKEN' }
-});
-
-// Namespace: /conversations/:conversationId
-// Rooms: Each user gets their own room for private updates
-```
-
-### 4.2 Client → Server Events
-
-```typescript
-// Join conversation room
-socket.emit('JOIN_CONVERSATION', { 
-  conversationId: 'uuid' 
-});
-
-// Start new agent discussion
-socket.emit('START_SESSION', {
-  conversationId: 'uuid',
-  userMessage: 'I want to build...',
-  attachments: ['file-id-1', 'file-id-2'],
-  activeAgents: ['marketing', 'developer', 'pm', 'qa'] // Optional
-});
-
-// Request specific agent response
-socket.emit('REQUEST_AGENT', {
-  conversationId: 'uuid',
-  personaId: 'qa',
-  context: 'How do we handle...'
-});
-
-// Stop ongoing agent discussion
-socket.emit('STOP_SESSION', { 
-  conversationId: 'uuid' 
-});
-
-// User is typing indicator
-socket.emit('USER_TYPING', { 
-  conversationId: 'uuid', 
-  isTyping: true 
-});
-```
-
-### 4.3 Server → Client Events
-
-```typescript
-// Real-time agent message streaming (token by token)
-socket.on('AGENT_STREAM', (data) => {
-  {
-    messageId: 'uuid',
-    personaId: 'marketing',
-    chunk: 'text fragment...',
-    isComplete: false
-  }
-});
-
-// Complete agent message
-socket.on('AGENT_MESSAGE', (data) => {
-  {
-    id: 'uuid',
-    conversationId: 'uuid',
-    personaId: 'marketing',
-    content: 'Full message text...',
-    createdAt: '2025-12-31T15:30:00Z',
-    sentimentScore: 0.85,
-    isRebuttal: false,
-    isResolution: false
-  }
-});
-
-// Agent started typing
-socket.on('AGENT_TYPING', (data) => {
-  {
-    personaId: 'developer',
-    isTyping: true,
-    message: 'is working on ideas...'
-  }
-});
-
-// Consensus & metrics update (real-time)
-socket.on('METRIC_UPDATE', (data) => {
-  {
-    agreementScore: 0.78,
-    viabilityScore: 8.2,
-    conflictCount: 2,
-    turnNumber: 8,
-    activeAgent: 'pm'
-  }
-});
-
-// Session completed with consensus
-socket.on('SESSION_COMPLETE', (data) => {
-  {
-    conversationId: 'uuid',
-    consensusReached: true,
-    finalRecommendation: 'Proceed with MVP...',
-    analytics: {
-      totalTurns: 15,
-      tokensUsed: 25000,
-      cost: 0.25
-    }
-  }
-});
-
-// Error handling
-socket.on('ERROR', (error) => {
-  {
-    code: 'RATE_LIMIT_EXCEEDED',
-    message: 'Token limit reached for this session',
-    retryAfter: 60
-  }
-});
-```
+- Socket.IO adapter is enabled on `/board`.
+- Use it for real-time conversation updates; event names and payloads may change as streaming is built out.
 
 ---
 
-## 5. Core Modules & Services
+## 5. Core modules (current)
 
-### 5.1 The Gateway (Ingress & WebSockets)
+- Conversations: CRUD, pagination, soft status via enum
+- Messages: Create/list under a conversation, optional structured output metadata
+- Personas: Seeded persona list with ids, colors, prompts
+- Attachments: Single-file upload and lookup
 
-**Module**: `gateway.module.ts`
-
-**Responsibilities**:
-- Handles WebSocket connections via Socket.IO
-- Namespace management for conversation isolation
-- JWT authentication for socket connections
-- Event routing to orchestration service
-
-**Event Pipeline**:
-- `subscribe('START_SESSION')`: Initializes the LangGraph state
-- `emit('AGENT_STREAM')`: Forwards LLM chunks to the specific client
-- `emit('METRIC_UPDATE')`: Pushes real-time scoring to dashboard
-- `emit('AGENT_TYPING')`: Broadcasts agent typing indicators
-- `emit('SESSION_COMPLETE')`: Notifies frontend when consensus is reached
-
-### 5.2 The Orchestration Service (LangGraph)
-
-**Module**: `orchestration.module.ts`
-
-The backend manages a `StateGraph` that determines the "Next Speaker" based on conversation context.
-
-**State Machine Flow**:
-
-```
-Entry Node → Process user prompt + document context
-    ↓
-Deliberation Loop:
-    ↓
-Marketing Agent → Evaluates market opportunity
-    ↓
-Developer Agent → Assesses technical feasibility  
-    ↓
-PM Agent → Analyzes resource requirements
-    ↓
-UX Agent → Evaluates user experience
-    ↓
-QA Agent → Identifies risks and edge cases
-    ↓
-Consensus Check → Analyzes semantic alignment
-    ↓
-If no consensus → Loop to next relevant agent
-If consensus → Generate final recommendation
-```
-
-**Key Features**:
-- Dynamic agent selection based on conversation context
-- Parallel agent invocation for efficiency (configurable)
-- Maximum turn limit (15 turns) to prevent infinite loops
-- State persistence to Redis for recovery
-- Conflict detection and resolution tracking
-
-### 5.3 The Tooling Service (RAG & Extraction)
-
-**Module**: `tooling.module.ts`
-
-**File Processing Pipeline**:
-1. **Upload Handler**: Multer for multipart uploads
-2. **Parser**: Converts PDFs, DOCX, TXT to plain text
-3. **Chunking**: 512-token chunks with overlap
-4. **Embedding**: `text-embedding-3-small` vectors
-5. **Storage**: Pinecone with conversation namespace
-
-**Search Tool**:
-- Agents invoke `searchDocuments(query: string)` during deliberation
-- Returns top-k relevant chunks with citations
-- Integrates with external APIs for market data
-
-**Supported File Types**:
-- PDF (pdf-parse)
-- DOCX (mammoth)
-- TXT, CSV, JSON
-- Images (OCR via Tesseract.js)
-
-### 5.4 The Persona Service
-
-**Module**: `persona.module.ts`
-
-**AgentPersona Factory**:
-```typescript
-interface AgentPersona {
-  id: string;
-  name: string;
-  systemPrompt: string;
-  temperature: number;
-  maxTokens: number;
-  tools: Tool[];
-}
-
-class PersonaFactory {
-  create(personaId: string): AgentPersona {
-    // Load from DB and inject specialized prompts
-  }
-}
-```
-
-**Default Personas**:
-- **Marketing** (Strategist): Market analysis, TAM calculation
-- **Developer** (Engineer): Technical feasibility, architecture
-- **PM** (Product Manager): Resource planning, roadmap
-- **UX** (Designer): User experience, friction points
-- **QA** (Quality Assurance): Risk analysis, edge cases
-
-### 5.5 The Consensus Engine
-
-**Module**: `consensus.module.ts`
-
-**Consensus Calculation** (weighted, not boolean):
-
-1. **Sentiment Extraction**: Score agreement level (0.0 to 1.0) of last message
-
-2. **Conflict Matrix**: Track unresolved rebuttals. Session cannot end if `isRebuttal` not followed by `isResolution`
-
-3. **Metric Stability**: Consensus flagged if `viabilityScore` moves < 5% across 3 consecutive turns
-
-4. **Vote Aggregation**: Each agent implicitly "votes" through semantic analysis
-
-**Consensus Criteria**:
-```typescript
-interface ConsensusCheck {
-  agreementThreshold: number;     // >= 0.75
-  conflictResolution: boolean;    // All rebuttals resolved
-  metricStability: boolean;       // < 5% variance over 3 turns
-  minTurns: number;               // >= 5 turns required
-  allAgentsParticipated: boolean; // Each active agent contributed
-}
-```
+Planned but not yet wired: orchestration/consensus logic and advanced analytics.
 
 ---
 
-## 6. Redis Persistence Strategy
+## 6. Redis
 
-Redis acts as the **Message Bus** and **State Store** for stateless horizontal scaling.
-
-### Key Patterns
-
-| Key Pattern | Data Type | Purpose | TTL |
-|------------|-----------|---------|-----|
-| `session:{id}:graph` | STRING (JSON) | Serialized LangGraph state | 24h |
-| `lock:debate:{id}` | STRING | Redlock for single agent speaking | 30s |
-| `cache:llm:{hash}` | STRING | Caches expensive reasoning | 7d |
-| `stream:{id}:buffer` | LIST | Buffers outgoing chunks | 1h |
-| `conv:{id}:metrics` | HASH | Real-time conversation metrics | 24h |
-| `user:{id}:rate` | STRING | Token bucket for rate limiting | 1m |
-| `typing:{conv}:{persona}` | STRING | Agent typing state | 10s |
-
-### Redis Pub/Sub Channels
-
-```typescript
-// Distributed system coordination
-PUBLISH agent:response:{conversationId} { messageId, personaId, content }
-SUBSCRIBE agent:response:*
-
-PUBLISH consensus:reached:{conversationId} { analytics }
-SUBSCRIBE consensus:reached:*
-```
+Redis is optional. If `REDIS_URL` is set, it can be used for caching/locks in future orchestration work. No Redis keys are currently defined in code.
 
 ---
 
-## 7. Security & Rate Limiting
+## 7. Security & validation
 
-### 7.1 Authentication
-
-**JWT Strategy**:
-- Access token (15 min expiry)
-- Refresh token (7 days expiry)
-- httpOnly cookies for web clients
-
-**Guards**:
-```typescript
-@UseGuards(JwtAuthGuard)          // REST endpoints
-@UseGuards(WsJwtGuard)            // WebSocket connections
-@UseGuards(RoleGuard)             // Admin routes
-```
-
-### 7.2 Rate Limiting
-
-**Token Bucket (Redis)**:
-- Limits LLM tokens per session per minute
-- Default: 50,000 tokens/minute per user
-- Prevents runaway API costs
-
-**Request Rate Limits**:
-- Anonymous: 10 req/min
-- Authenticated: 100 req/min
-- Premium: 500 req/min
-
-### 7.3 Input Validation
-
-```typescript
-class CreateMessageDto {
-  @IsString()
-  @MaxLength(5000)
-  @Transform(sanitizeHtml)
-  content: string;
-
-  @IsArray()
-  @ArrayMaxSize(5)
-  attachmentIds?: string[];
-}
-```
-
-### 7.4 Sandbox Execution
-
-Code generation by Developer Agent runs in isolated environment:
-- No network access
-- Limited CPU/Memory
-- 5-second timeout
-- Uses `vm2` or Docker containers
+- JWT config exists; most routes are currently open. Enable guards when auth is finalized.
+- DTOs enforce payload shape and limits (see create/update DTOs in controllers).
 
 ---
 
-## 8. Frontend Integration Examples
+## 8. Frontend integration (minimal examples)
 
-### 8.1 REST API Usage
-
-```typescript
-// Fetch conversations
-const response = await fetch('/api/conversations?page=1&limit=20', {
-  headers: { 'Authorization': `Bearer ${token}` }
-});
-const { data, pagination } = await response.json();
-
-// Send message
-const response = await fetch(`/api/conversations/${conversationId}/messages`, {
-  method: 'POST',
-  headers: {
-    'Authorization': `Bearer ${token}`,
-    'Content-Type': 'application/json'
-  },
-  body: JSON.stringify({
-    content: 'I want to build...',
-    attachmentIds: ['file-1', 'file-2']
-  })
-});
-```
-
-### 8.2 WebSocket Integration
-
-```typescript
-import io from 'socket.io-client';
-
-const socket = io(`${API_URL}/conversations/${conversationId}`, {
-  auth: { token: localStorage.getItem('token') }
-});
-
-// Listen for agent messages
-socket.on('AGENT_STREAM', (data) => {
-  appendStreamingText(data.personaId, data.chunk);
-});
-
-socket.on('AGENT_MESSAGE', (message) => {
-  addMessageToUI(message);
-});
-
-socket.on('AGENT_TYPING', (data) => {
-  showTypingIndicator(data.personaId);
-});
-
-socket.on('METRIC_UPDATE', (metrics) => {
-  updateDashboard(metrics);
-});
-
-// Send message
-socket.emit('START_SESSION', {
-  conversationId: conversationId,
-  userMessage: message,
-  attachments: fileIds
-});
-```
-
-### 8.3 File Upload
-
-```typescript
-const formData = new FormData();
-files.forEach(file => formData.append('files', file));
-
-const response = await fetch(`/api/conversations/${conversationId}/upload`, {
-  method: 'POST',
-  headers: { 'Authorization': `Bearer ${token}` },
-  body: formData
-});
-
-const { attachments } = await response.json();
-```
+- REST: call `/api/v1/conversations` and `/api/v1/conversations/:id/messages`; bearer auth can be added later.
+- WebSockets: connect to `/board` via Socket.IO for real-time updates as streaming is added.
+- File uploads: `POST /api/v1/attachments/upload` with `file` form field.
 
 ---
 
-## 9. Implementation Checklist
+## 9. Implementation checklist (what’s left vs done)
 
-### Phase 1: Core Infrastructure
-- [ ] Set up NestJS project with modular architecture
-- [ ] Configure TypeORM with PostgreSQL schema
-- [ ] Implement RedisModule for distributed locking
-- [ ] Set up JWT authentication with refresh tokens
-- [ ] Configure CORS and security middleware
-
-### Phase 2: API Development
-- [ ] Implement user authentication endpoints
-- [ ] Build conversation CRUD operations
-- [ ] Create message management APIs
-- [ ] Implement file upload with S3/Azure
-- [ ] Add pagination and filtering
-
-### Phase 3: Real-Time Communication
-- [ ] Set up Socket.IO with namespace management
-- [ ] Implement WebSocket authentication guards
-- [ ] Build event handlers for agent communication
-- [ ] Create streaming response pipeline
-- [ ] Add typing indicators and presence
-
-### Phase 4: AI Orchestration
-- [ ] Integrate LangGraph state machine
-- [ ] Build AgentPersona factory with system prompts
-- [ ] Implement consensus engine logic
-- [ ] Create conflict detection and tracking
-- [ ] Add maximum turn limit (15 turns) safeguard
-
-### Phase 5: RAG & Document Processing
-- [ ] Set up PineconeClient for vector search
-- [ ] Build file processing pipeline
-- [ ] Implement document chunking and embedding
-- [ ] Create search tool for agent queries
-- [ ] Add citation tracking for RAG responses
-
-### Phase 6: Testing & Deployment
-- [ ] Write unit tests (80% coverage)
-- [ ] Create integration tests for APIs
-- [ ] Build E2E tests for WebSocket flows
-- [ ] Set up CI/CD pipeline
-- [ ] Configure production monitoring
+- [x] NestJS app with TypeORM entities for conversations/messages/personas/attachments
+- [x] REST controllers for conversations, messages, personas, attachments
+- [x] File upload via Multer (single file)
+- [x] Swagger docs and API versioning
+- [ ] Enforce auth/guards on routes
+- [ ] Real-time streaming events over Socket.IO
+- [ ] Analytics/consensus endpoints
+- [ ] Redis-backed orchestration/caching
+- [ ] RAG/vector search pipeline
+- [ ] Broader test coverage and CI
